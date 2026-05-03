@@ -14,6 +14,7 @@ const HOLE_IMAGE_BASE = 'https://golfcultus.com/wp-content/uploads/2024/03'
 
 export function cultusHoleImageSrc(hole: number): string {
   if (hole === 1) return `${HOLE_IMAGE_BASE}/hole1-1.webp`
+  if (hole === 14) return `${HOLE_IMAGE_BASE}/Hole14-1.webp`
   if (hole === 16) {
     return `${HOLE_IMAGE_BASE}/Hole16-e1561986125589.webp`
   }
