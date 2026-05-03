@@ -36,5 +36,5 @@ export function rosterPlayerIdsForTeamId(teamId: string): Array<string> {
 
 /** Fixed cap per player (matches app house rule). */
 export function maxTeeDrivesPerPlayer(): number {
-  return 4
+  return 3
 }
