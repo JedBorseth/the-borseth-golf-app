@@ -148,3 +148,76 @@ export const submitHoleScore = mutation({
     })
   },
 })
+
+/**
+ * Replace this team's entire scorecard on the server. Clients should send every
+ * scored hole so nothing is missed after offline play (full round snapshot).
+ */
+export const syncFullScorecard = mutation({
+  args: {
+    teamName: v.string(),
+    teamId: v.string(),
+    holes: v.array(
+      v.object({
+        hole: v.number(),
+        strokes: v.number(),
+        teePlayerId: v.string(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const roster = rosterPlayerIdsForTeamId(args.teamId)
+    if (roster.length === 0) {
+      throw new ConvexError('Unknown team')
+    }
+
+    const cap = maxTeeDrivesPerPlayer()
+    const usage = new Map<string, number>()
+
+    const byHole = new Map<
+      number,
+      { hole: number; strokes: number; teePlayerId: string }
+    >()
+    for (const h of args.holes) {
+      byHole.set(h.hole, h)
+    }
+    const uniqueHoles = [...byHole.values()].sort((a, b) => a.hole - b.hole)
+
+    for (const h of uniqueHoles) {
+      if (h.hole < 1 || h.hole > 18) {
+        throw new ConvexError('Invalid hole')
+      }
+      if (!roster.includes(h.teePlayerId)) {
+        throw new ConvexError(`Tee player not on this team (hole ${h.hole})`)
+      }
+      usage.set(h.teePlayerId, (usage.get(h.teePlayerId) ?? 0) + 1)
+    }
+
+    for (const [, count] of usage) {
+      if (count > cap) {
+        throw new ConvexError(
+          `Each player can only be tee player up to ${cap} times per round`,
+        )
+      }
+    }
+
+    const existing = await ctx.db
+      .query('teamHoleScores')
+      .withIndex('by_team_hole', (q) => q.eq('teamName', args.teamName))
+      .collect()
+
+    for (const row of existing) {
+      await ctx.db.delete(row._id)
+    }
+
+    for (const h of uniqueHoles) {
+      await ctx.db.insert('teamHoleScores', {
+        teamName: args.teamName,
+        teamId: args.teamId,
+        hole: h.hole,
+        strokes: h.strokes,
+        teePlayerId: h.teePlayerId,
+      })
+    }
+  },
+})
