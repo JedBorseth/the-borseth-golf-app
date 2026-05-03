@@ -50,6 +50,11 @@ import {
   type LocalScorecard,
 } from '~/lib/local-scores'
 import { isOfflineOrNetworkError } from '~/lib/network-error'
+import {
+  clearLastHoleForTeam,
+  loadLastHoleForTeam,
+  saveLastHoleForTeam,
+} from '~/lib/play-position'
 import { cn } from '~/lib/utils'
 
 export const Route = createFileRoute('/play/')({
@@ -93,6 +98,24 @@ function PlayGolfPage() {
   }, [navigate])
 
   const teamName = profile?.teamName ?? ''
+
+  const skipNextHolePersist = React.useRef(true)
+
+  React.useEffect(() => {
+    if (!hydrated || !teamName) return
+    skipNextHolePersist.current = true
+    const saved = loadLastHoleForTeam(teamName)
+    setCurrentHole(saved ?? 1)
+  }, [hydrated, teamName])
+
+  React.useEffect(() => {
+    if (!hydrated || !teamName) return
+    if (skipNextHolePersist.current) {
+      skipNextHolePersist.current = false
+      return
+    }
+    saveLastHoleForTeam(teamName, currentHole)
+  }, [hydrated, teamName, currentHole])
 
   const scoresQuery = useQuery({
     ...convexQuery(api.golf.scoresForTeam, { teamName }),
@@ -381,6 +404,8 @@ function PlayGolfPage() {
         holes,
       })
       clearLocalScorecard(profile.teamName)
+      clearLastHoleForTeam(profile.teamName)
+      setCurrentHole(1)
       setLocalSyncVersion((v) => v + 1)
       setServerInSync(true)
       void queryClient.invalidateQueries({
