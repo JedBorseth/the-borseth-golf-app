@@ -19,9 +19,9 @@ export const Route = createFileRoute('/rules')({
 })
 
 function RulesPage() {
-  const [backTo, setBackTo] = React.useState<ReturnType<
-    typeof postSetupBackPath
-  >>(() => '/')
+  const [backTo, setBackTo] = React.useState<
+    ReturnType<typeof postSetupBackPath>
+  >(() => '/')
 
   React.useEffect(() => {
     setBackTo(postSetupBackPath())
@@ -55,8 +55,7 @@ function RulesPage() {
             <ul className="list-disc space-y-1 pl-5">
               <li>18-hole stroke play scramble match.</li>
               <li>
-                You must use 4 tee shots from each team member during the
-                round.
+                You must use 3 tee shots from each team member during the round.
               </li>
               <li>Gimmies inside a scorecard length.</li>
               <li>Pick up after double par to keep pace.</li>
@@ -64,9 +63,7 @@ function RulesPage() {
           </RuleSection>
           <RuleSection title="Scoring">
             <ul className="list-disc space-y-1 pl-5">
-              <li>
-                Enter gross scores on each hole before hopping to the next.
-              </li>
+              <li>Enter scores on each hole before hopping to the next.</li>
               <li>The leaderboard updates live for everyone.</li>
             </ul>
           </RuleSection>

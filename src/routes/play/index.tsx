@@ -351,7 +351,7 @@ function PlayGolfPage() {
                   })}
                 </div>
               </div>
-              <div className="shrink-0 border-t bg-muted/40 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <div className="shrink-0 border-t bg-muted/40 px-4 pt-3 pb-[max(1.25rem,calc(0.75rem+env(safe-area-inset-bottom)))]">
                 <div className="space-y-3 text-sm">
                   <div>
                     <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">

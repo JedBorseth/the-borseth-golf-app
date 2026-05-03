@@ -21,6 +21,12 @@ import {
 import { postSetupBackPath } from '~/lib/device-profile'
 import { cn } from '~/lib/utils'
 
+function vsParLeaderboardLabel(vsPar: number): string {
+  if (vsPar === 0) return 'E'
+  if (vsPar > 0) return `+${vsPar}`
+  return `${vsPar}`
+}
+
 export const Route = createFileRoute('/leaderboard')({
   component: LeaderboardPage,
 })
@@ -53,7 +59,7 @@ function LeaderboardPage() {
             Leaderboard
           </h1>
           <p className="text-xs text-muted-foreground">
-            {COURSE_NAME} • Team Totals (scramble)
+            {COURSE_NAME} • Team vs par (scramble)
           </p>
         </div>
       </div>
@@ -62,8 +68,8 @@ function LeaderboardPage() {
         <CardHeader className="pb-3">
           <CardTitle className="text-lg">Standings</CardTitle>
           <CardDescription>
-            One score per team per hole. Completed rounds sort ahead of
-            in-progress teams.
+            One score per team per hole. Figures are strokes vs course par on
+            holes played. Completed rounds sort ahead of in-progress teams.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -96,7 +102,7 @@ function LeaderboardPage() {
               </div>
               <div className="text-right">
                 <p className="text-lg font-semibold tabular-nums">
-                  {row.totalStrokes}
+                  {vsParLeaderboardLabel(row.relativeToPar)}
                 </p>
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
                   {row.holesPlayed}/18 holes
