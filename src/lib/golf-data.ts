@@ -10,8 +10,7 @@ export const COURSE_NAME = 'Cultus Lake Golf Club'
 export const SCORECARD_IMAGE_URL =
   'https://golfcultus.com/wp-content/uploads/2024/02/2021-CLGC-Scorecard-Back.webp'
 
-const HOLE_IMAGE_BASE =
-  'https://golfcultus.com/wp-content/uploads/2024/03'
+const HOLE_IMAGE_BASE = 'https://golfcultus.com/wp-content/uploads/2024/03'
 
 export function cultusHoleImageSrc(hole: number): string {
   if (hole === 1) return `${HOLE_IMAGE_BASE}/hole1-1.webp`
@@ -22,13 +21,11 @@ export function cultusHoleImageSrc(hole: number): string {
 }
 
 /** Par and white-tee yardages from Cultus Lake GC scorecard. */
-const HOLE_PAR = [
-  3, 3, 3, 4, 4, 5, 3, 3, 4, 4, 4, 4, 3, 3, 4, 3, 3, 3,
-] as const
+const HOLE_PAR = [3, 3, 3, 4, 4, 5, 3, 3, 4, 4, 4, 4, 3, 3, 4, 3, 3, 3] as const
 
 const WHITE_YARDS = [
-  167, 121, 167, 314, 330, 371, 86, 97, 200, 210, 300, 222, 160, 133, 236,
-  140, 121, 136,
+  167, 121, 167, 314, 330, 371, 86, 97, 200, 210, 300, 222, 160, 133, 236, 140,
+  121, 136,
 ] as const
 
 /** Short descriptions from Cultus Lake GC hole pages (golfcultus.com astra-portfolio). */
@@ -72,6 +69,10 @@ export const HOLE_META: Array<HoleMeta> = HOLE_PAR.map((par, i) => {
   }
 })
 
+export function parForHole(hole: number): number | undefined {
+  return HOLE_META[hole - 1]?.par
+}
+
 /** Default display names (edit on setup). */
 export const TEAM_LABELS: Record<string, string> = {
   t1: 'Team Fairway',
@@ -82,23 +83,27 @@ export const TEAM_LABELS: Record<string, string> = {
 }
 
 export const PLAYERS: Array<PlayerRecord> = [
-  { id: 'p1', name: 'Jason Borseth', teamId: 't1' },
-  { id: 'p2', name: 'Jasmine Mancuso', teamId: 't1' },
+  { id: 'p9', name: 'Andrea Phillips', teamId: 't1' },
   { id: 'p3', name: 'Hannah Ker', teamId: 't1' },
-  { id: 'p4', name: 'Blake Mcintosh', teamId: 't1' },
+  { id: 'p1', name: 'Jason Borseth', teamId: 't1' },
+  { id: 'p17', name: 'Lexi Borseth', teamId: 't1' },
+
+  { id: 'p7', name: 'Jonah Borseth', teamId: 't2' },
   { id: 'p5', name: 'Kathi Mcintosh', teamId: 't2' },
   { id: 'p6', name: 'Max Borseth', teamId: 't2' },
-  { id: 'p7', name: 'Jonah Borseth', teamId: 't2' },
-  { id: 'p8', name: 'Jed Borseth', teamId: 't3' },
-  { id: 'p9', name: 'Andrea Phillips', teamId: 't3' },
-  { id: 'p10', name: 'Marry Liz Borseth', teamId: 't3' },
+
   { id: 'p11', name: 'Emily Phillips', teamId: 't3' },
-  { id: 'p12', name: 'Lily Borseth', teamId: 't4' },
+  { id: 'p2', name: 'Jasmine Mancuso', teamId: 't3' },
+  { id: 'p8', name: 'Jed Borseth', teamId: 't3' },
+  { id: 'p10', name: 'Mary-Liz Borseth', teamId: 't3' },
+
   { id: 'p13', name: 'Josh Borseth', teamId: 't4' },
-  { id: 'p14', name: 'Josh Phillips', teamId: 't4' },
+  { id: 'p14', name: 'Josh Dyck', teamId: 't4' },
+  { id: 'p12', name: 'Lily Borseth', teamId: 't4' },
+
+  { id: 'p4', name: 'Blake Mcintosh', teamId: 't5' },
   { id: 'p15', name: 'Mike Borseth', teamId: 't5' },
   { id: 'p16', name: 'Mike Phillips', teamId: 't5' },
-  { id: 'p17', name: 'Lexi Borseth', teamId: 't5' },
 ]
 
 export function teammatesForPlayer(playerId: string): Array<PlayerRecord> {
@@ -119,7 +124,9 @@ export function playerNameById(playerId: string): string | undefined {
 }
 
 /** Comma-separated first names from stable team id (works with custom display team names). */
-export function firstNamesLineForTeamId(teamId: string | null | undefined): string {
+export function firstNamesLineForTeamId(
+  teamId: string | null | undefined,
+): string {
   if (!teamId || !TEAM_LABELS[teamId]) return ''
   return PLAYERS.filter((p) => p.teamId === teamId)
     .map((p) => p.name.split(/\s+/)[0] ?? p.name)

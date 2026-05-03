@@ -1,4 +1,5 @@
 import { ConvexError, v } from 'convex/values'
+import { parForHole } from '../src/lib/golf-data'
 import { mutation, query } from './_generated/server'
 import {
   maxTeeDrivesPerPlayer,
@@ -14,25 +15,28 @@ export const leaderboard = query({
       {
         teamId: string | undefined
         displayName: string
-        total: number
+        vsPar: number
         holes: Set<number>
       }
     >()
 
     for (const row of rows) {
+      const par = parForHole(row.hole)
+      if (par === undefined) continue
+
       const key = row.teamId ?? row.teamName
       const cur = byTeam.get(key)
       if (!cur) {
         byTeam.set(key, {
           teamId: row.teamId,
           displayName: row.teamName,
-          total: row.strokes,
+          vsPar: row.strokes - par,
           holes: new Set([row.hole]),
         })
       } else {
         if (row.teamId) cur.teamId = row.teamId
         cur.displayName = row.teamName
-        cur.total += row.strokes
+        cur.vsPar += row.strokes - par
         cur.holes.add(row.hole)
       }
     }
@@ -40,7 +44,7 @@ export const leaderboard = query({
     const entries = [...byTeam.values()].map((stats) => ({
       teamName: stats.displayName,
       teamId: stats.teamId ?? null,
-      totalStrokes: stats.total,
+      relativeToPar: stats.vsPar,
       holesPlayed: stats.holes.size,
     }))
 
@@ -48,7 +52,7 @@ export const leaderboard = query({
       const af = a.holesPlayed >= 18 ? 0 : 1
       const bf = b.holesPlayed >= 18 ? 0 : 1
       if (af !== bf) return af - bf
-      return a.totalStrokes - b.totalStrokes
+      return a.relativeToPar - b.relativeToPar
     })
 
     return entries
@@ -126,7 +130,7 @@ export const submitHoleScore = mutation({
       .unique()
 
     if (existing) {
-      await ctx.db.patch(existing._id, {
+      await ctx.db.patch('teamHoleScores', existing._id, {
         teamName: args.teamName,
         teamId: args.teamId,
         strokes: args.strokes,
