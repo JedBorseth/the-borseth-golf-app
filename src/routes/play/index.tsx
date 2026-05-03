@@ -2,7 +2,7 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { ConvexError } from 'convex/values'
 import * as React from 'react'
 import { useMutation } from 'convex/react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { convexQuery } from '@convex-dev/react-query'
 import {
   ArrowLeftIcon,
@@ -42,6 +42,15 @@ import {
   playerNameById,
   teammatesForPlayer,
 } from '~/lib/golf-data'
+import {
+  countPendingForTeam,
+  listPendingScores,
+  mergePendingStrokes,
+  mergePendingTeePlayers,
+  removePendingScore,
+  upsertPendingScore,
+} from '~/lib/local-scores'
+import { isOfflineOrNetworkError } from '~/lib/network-error'
 import { cn } from '~/lib/utils'
 
 export const Route = createFileRoute('/play/')({
@@ -62,6 +71,9 @@ function PlayGolfPage() {
   const [skipNextScorePromptForHole, setSkipNextScorePromptForHole] =
     React.useState<number | null>(null)
   const [scoreOpenedViaNext, setScoreOpenedViaNext] = React.useState(false)
+  const [localSyncVersion, setLocalSyncVersion] = React.useState(0)
+
+  const queryClient = useQueryClient()
 
   React.useEffect(() => {
     const nextProfile = loadProfile()
@@ -84,12 +96,65 @@ function PlayGolfPage() {
   const scoresQuery = useQuery({
     ...convexQuery(api.golf.scoresForTeam, { teamName }),
     enabled: hydrated && !!teamName,
+    gcTime: 1000 * 60 * 60 * 24,
   })
 
-  const strokes = scoresQuery.data?.strokes ?? {}
-  const teePlayerIdByHole = scoresQuery.data?.teePlayerIdByHole ?? {}
+  const serverStrokes = scoresQuery.data?.strokes ?? {}
+  const serverTeeByHole = scoresQuery.data?.teePlayerIdByHole ?? {}
+
+  const strokes = React.useMemo(
+    () => mergePendingStrokes(serverStrokes, teamName),
+    [serverStrokes, teamName, localSyncVersion],
+  )
+
+  const teePlayerIdByHole = React.useMemo(
+    () => mergePendingTeePlayers(serverTeeByHole, teamName),
+    [serverTeeByHole, teamName, localSyncVersion],
+  )
 
   const submitHoleScore = useMutation(api.golf.submitHoleScore)
+
+  const flushPendingToConvex = React.useCallback(async () => {
+    if (!teamName) return
+    const pending = listPendingScores().filter((p) => p.teamName === teamName)
+    if (pending.length === 0) return
+    let changed = false
+    for (const item of pending) {
+      try {
+        await submitHoleScore(item)
+        removePendingScore(item.teamName, item.hole)
+        changed = true
+      } catch (e: unknown) {
+        if (e instanceof ConvexError && typeof e.data === 'string') {
+          removePendingScore(item.teamName, item.hole)
+          changed = true
+          console.warn(
+            '[scores] dropped invalid pending hole %s: %s',
+            item.hole,
+            e.data,
+          )
+        }
+      }
+    }
+    if (changed) {
+      setLocalSyncVersion((v) => v + 1)
+      void queryClient.invalidateQueries({
+        queryKey: convexQuery(api.golf.scoresForTeam, { teamName }).queryKey,
+      })
+    }
+  }, [teamName, submitHoleScore, queryClient])
+
+  React.useEffect(() => {
+    if (!hydrated || !teamName) return
+    void flushPendingToConvex()
+    const id = setInterval(() => void flushPendingToConvex(), 45_000)
+    const onOnline = () => void flushPendingToConvex()
+    window.addEventListener('online', onOnline)
+    return () => {
+      clearInterval(id)
+      window.removeEventListener('online', onOnline)
+    }
+  }, [hydrated, teamName, flushPendingToConvex])
 
   const teammates = React.useMemo(
     () => (profile?.playerId ? teammatesForPlayer(profile.playerId) : []),
@@ -141,6 +206,11 @@ function PlayGolfPage() {
     }
   }, [strokes, teePlayerIdByHole])
 
+  const pendingOutbound = React.useMemo(
+    () => countPendingForTeam(teamName),
+    [teamName, localSyncVersion],
+  )
+
   function scoreForHole(hole: number): number | undefined {
     const val = strokes[String(hole)]
     return typeof val === 'number' ? val : undefined
@@ -188,28 +258,47 @@ function PlayGolfPage() {
   async function confirmScore(strokesArg: number, teePlayerId: string) {
     if (!profile?.teamName || !profile.teamId || scoreTargetHole === null)
       return
-    try {
-      await submitHoleScore({
-        teamName: profile.teamName,
-        teamId: profile.teamId,
-        hole: scoreTargetHole,
-        strokes: strokesArg,
-        teePlayerId,
-      })
-    } catch (e: unknown) {
-      const msg =
-        e instanceof ConvexError && typeof e.data === 'string'
-          ? e.data
-          : e instanceof Error
-            ? e.message
-            : 'Could not save score'
-      window.alert(msg)
-      return
+    const hole = scoreTargetHole
+    const payload = {
+      teamName: profile.teamName,
+      teamId: profile.teamId,
+      hole,
+      strokes: strokesArg,
+      teePlayerId,
     }
-    setSkipNextScorePromptForHole((s) => (s === scoreTargetHole ? null : s))
+
+    upsertPendingScore(payload)
+    setLocalSyncVersion((v) => v + 1)
+    setSkipNextScorePromptForHole((s) => (s === hole ? null : s))
     setScoreOpenedViaNext(false)
     setScoreDialogOpen(false)
     setScoreTargetHole(null)
+
+    try {
+      await submitHoleScore(payload)
+      removePendingScore(profile.teamName, hole)
+      setLocalSyncVersion((v) => v + 1)
+      void queryClient.invalidateQueries({
+        queryKey: convexQuery(api.golf.scoresForTeam, {
+          teamName: profile.teamName,
+        }).queryKey,
+      })
+    } catch (e: unknown) {
+      if (e instanceof ConvexError && typeof e.data === 'string') {
+        removePendingScore(profile.teamName, hole)
+        setLocalSyncVersion((v) => v + 1)
+        window.alert(e.data)
+        return
+      }
+      if (isOfflineOrNetworkError(e)) {
+        return
+      }
+      const msg =
+        e instanceof Error ? e.message : 'Could not reach score server'
+      window.alert(
+        `${msg}\n\nThis hole is saved on your device and will retry automatically.`,
+      )
+    }
   }
 
   function cancelScoreDialog() {
@@ -258,6 +347,13 @@ function PlayGolfPage() {
             {profile.playerId && teammates.length > 0 && (
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Your tee drives: {myTeeDriveCount} / {teeCap}
+              </p>
+            )}
+            {pendingOutbound > 0 && (
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                {pendingOutbound === 1
+                  ? '1 hole saved on this device — will sync when the connection is back.'
+                  : `${pendingOutbound} holes saved on this device — will sync when the connection is back.`}
               </p>
             )}
           </div>
