@@ -33,8 +33,3 @@ export function rosterPlayerIdsForTeamId(teamId: string): Array<string> {
   if (!TEAM_LABELS[teamId]) return []
   return PLAYERS.filter((p) => p.teamId === teamId).map((p) => p.id)
 }
-
-/** Fixed cap per player (matches app house rule). */
-export function maxTeeDrivesPerPlayer(): number {
-  return 3
-}

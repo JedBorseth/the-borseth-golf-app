@@ -19,13 +19,8 @@ import {
   CardTitle,
 } from '~/components/ui/card'
 import { postSetupBackPath } from '~/lib/device-profile'
+import { relativeToParShortLabel } from '~/lib/hole-score-indicator'
 import { cn } from '~/lib/utils'
-
-function vsParLeaderboardLabel(vsPar: number): string {
-  if (vsPar === 0) return 'E'
-  if (vsPar > 0) return `+${vsPar}`
-  return `${vsPar}`
-}
 
 export const Route = createFileRoute('/leaderboard')({
   component: LeaderboardPage,
@@ -66,8 +61,8 @@ function LeaderboardPage() {
         <CardHeader className="pb-3">
           <CardTitle className="text-lg">Standings</CardTitle>
           <CardDescription>
-            One score per team per hole. Figures are strokes vs course par on
-            holes played. Completed rounds sort ahead of in-progress teams.
+            One score per team per hole. Totals are strokes vs par on holes
+            played (completed rounds sort ahead of in-progress teams).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -99,8 +94,8 @@ function LeaderboardPage() {
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-lg font-semibold tabular-nums">
-                  {vsParLeaderboardLabel(row.relativeToPar)}
+                <p className="text-lg font-semibold leading-tight tabular-nums text-foreground">
+                  {relativeToParShortLabel(row.relativeToPar)}
                 </p>
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
                   {row.holesPlayed}/18 holes

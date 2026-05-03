@@ -114,8 +114,8 @@ export function teammatesForPlayer(playerId: string): Array<PlayerRecord> {
   )
 }
 
-/** House rule: max tee-ball picks per player per round (fixed, not derived from roster size). */
-export function maxTeeDrivesPerPlayer(_teamSize: number): number {
+/** House rule: minimum tee-ball picks per player per round (no enforced maximum). */
+export function minTeeShotsRequiredPerPlayer(_teamSize: number): number {
   return 3
 }
 

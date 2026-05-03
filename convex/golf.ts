@@ -1,10 +1,7 @@
 import { ConvexError, v } from 'convex/values'
 import { parForHole } from '../src/lib/golf-data'
 import { mutation, query } from './_generated/server'
-import {
-  maxTeeDrivesPerPlayer,
-  rosterPlayerIdsForTeamId,
-} from './golfRoster'
+import { rosterPlayerIdsForTeamId } from './golfRoster'
 
 export const leaderboard = query({
   args: {},
@@ -96,30 +93,6 @@ export const submitHoleScore = mutation({
     }
     if (!roster.includes(args.teePlayerId)) {
       throw new ConvexError('Tee player not on this team')
-    }
-
-    const cap = maxTeeDrivesPerPlayer()
-
-    const teamRows = await ctx.db
-      .query('teamHoleScores')
-      .withIndex('by_team_hole', (q) => q.eq('teamName', args.teamName))
-      .collect()
-
-    const usage = new Map<string, number>()
-    for (const row of teamRows) {
-      if (row.hole === args.hole) continue
-      if (!row.teePlayerId) continue
-      usage.set(
-        row.teePlayerId,
-        (usage.get(row.teePlayerId) ?? 0) + 1,
-      )
-    }
-
-    const nextCount = (usage.get(args.teePlayerId) ?? 0) + 1
-    if (nextCount > cap) {
-      throw new ConvexError(
-        `Each player can only be tee player up to ${cap} times per round`,
-      )
     }
 
     const existing = await ctx.db

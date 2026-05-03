@@ -38,10 +38,21 @@ import { loadProfile } from '~/lib/device-profile'
 import {
   COURSE_NAME,
   HOLE_META,
-  maxTeeDrivesPerPlayer,
+  minTeeShotsRequiredPerPlayer,
   playerNameById,
   teammatesForPlayer,
 } from '~/lib/golf-data'
+import {
+  deltaForHole,
+  holeScoreAriaDescription,
+  holeScoreHeroMainClasses,
+  holeScoreInputTintClasses,
+  holeScorePresetButtonClasses,
+  holeScoreSimpleLine,
+  holeScoreStrokesCardClasses,
+  holeScoreTier,
+  relativeToParShortLabel,
+} from '~/lib/hole-score-indicator'
 import { cn } from '~/lib/utils'
 
 export const Route = createFileRoute('/play/')({
@@ -96,7 +107,7 @@ function PlayGolfPage() {
     [profile?.playerId],
   )
 
-  const teeCap = maxTeeDrivesPerPlayer(teammates.length || 1)
+  const teeMinimum = minTeeShotsRequiredPerPlayer(teammates.length || 1)
 
   const myTeeDriveCount = React.useMemo(() => {
     if (!profile?.playerId) return 0
@@ -119,13 +130,7 @@ function PlayGolfPage() {
     }
     const vsPar = totalStrokes - totalPar
     const vsParLabel =
-      holesWithScore === 0
-        ? null
-        : vsPar === 0
-          ? 'E'
-          : vsPar > 0
-            ? `+${vsPar}`
-            : `${vsPar}`
+      holesWithScore === 0 ? null : relativeToParShortLabel(vsPar)
 
     const teeByPlayer = new Map<string, number>()
     for (const id of Object.values(teePlayerIdByHole)) {
@@ -231,6 +236,10 @@ function PlayGolfPage() {
 
   const meta = HOLE_META[currentHole - 1]
   const recorded = scoreForHole(currentHole)
+  const recordedDelta =
+    recorded !== undefined ? deltaForHole(recorded, meta.par) : undefined
+  const recordedTier =
+    recordedDelta !== undefined ? holeScoreTier(recordedDelta) : undefined
   const greetingName =
     profile.playerName?.split(' ')[0] ?? profile.playerName ?? 'Player'
 
@@ -257,7 +266,7 @@ function PlayGolfPage() {
             </p>
             {profile.playerId && teammates.length > 0 && (
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Your tee drives: {myTeeDriveCount} / {teeCap}
+                Your tee shots: {myTeeDriveCount} / {teeMinimum}
               </p>
             )}
           </div>
@@ -291,11 +300,10 @@ function PlayGolfPage() {
               className="flex max-h-[min(92dvh,840px)] flex-col gap-0 rounded-t-3xl p-0"
             >
               <SheetHeader className="shrink-0 px-4 pt-4 pb-2 text-left">
-                <SheetTitle>Team scorecard</SheetTitle>
+                <SheetTitle>Team Scorecard</SheetTitle>
                 <SheetDescription>
-                  {profile.teamName} • Scramble (white tees) •{' '}
-                  {profile.playerName}. Tap a hole to enter or edit the team
-                  score.
+                  {profile.teamName} • Scramble (white tees) • Tap a hole to
+                  enter or edit the team score.
                 </SheetDescription>
               </SheetHeader>
               <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
@@ -304,14 +312,12 @@ function PlayGolfPage() {
                     const value = scoreForHole(hole.hole)
                     const teeId = teePlayerForHole(hole.hole)
                     const teeLabel = teeId ? playerNameById(teeId) : null
-                    const relative =
-                      value === undefined
-                        ? '—'
-                        : value - hole.par === 0
-                          ? 'E'
-                          : value - hole.par > 0
-                            ? `+${value - hole.par}`
-                            : `${value - hole.par}`
+                    const delta =
+                      value !== undefined
+                        ? deltaForHole(value, hole.par)
+                        : undefined
+                    const tier =
+                      delta !== undefined ? holeScoreTier(delta) : undefined
                     return (
                       <button
                         key={hole.hole}
@@ -338,13 +344,24 @@ function PlayGolfPage() {
                             </p>
                           </div>
                         </div>
-                        <div className="shrink-0 text-right tabular-nums">
-                          <p className="text-base font-semibold">
-                            {value ?? '—'}
-                          </p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {relative}
-                          </p>
+                        <div className="shrink-0 text-right">
+                          {value !== undefined &&
+                          tier !== undefined &&
+                          delta !== undefined ? (
+                            <span
+                              className={holeScoreStrokesCardClasses(tier)}
+                              aria-label={holeScoreAriaDescription(
+                                value,
+                                hole.par,
+                              )}
+                            >
+                              {holeScoreSimpleLine(value, hole.par)}
+                            </span>
+                          ) : (
+                            <span className="text-base text-muted-foreground">
+                              —
+                            </span>
+                          )}
                         </div>
                       </button>
                     )
@@ -363,8 +380,10 @@ function PlayGolfPage() {
                       </p>
                     ) : (
                       <>
-                        <p className="mt-0.5 text-lg font-semibold leading-tight tabular-nums">
-                          {scorecardFooter.vsParLabel}
+                        <p className="mt-0.5 font-semibold leading-tight tabular-nums">
+                          <span className="text-foreground tabular-nums">
+                            {scorecardFooter.vsParLabel}
+                          </span>
                           <span className="ml-2 text-sm font-normal tabular-nums text-muted-foreground">
                             ({scorecardFooter.holesWithScore} /{' '}
                             {HOLE_META.length} holes)
@@ -388,7 +407,7 @@ function PlayGolfPage() {
                             >
                               <span className="text-foreground">{tm.name}</span>
                               <span className="tabular-nums text-muted-foreground">
-                                {n} / {teeCap}
+                                {n} / {teeMinimum}
                               </span>
                             </li>
                           )
@@ -404,22 +423,31 @@ function PlayGolfPage() {
       </header>
 
       <div className="mb-4 overflow-hidden rounded-2xl border bg-card shadow-sm">
-        <div className="relative aspect-3/2 w-full bg-muted pb-20">
+        <div className="relative aspect-3/2 w-full bg-muted pb-24">
           <img
             src={meta.imageSrc}
             alt={`Hole ${meta.hole} view`}
             className="size-full object-contain"
             loading="lazy"
           />
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-4 py-3 text-white">
-            <p className="text-xs uppercase tracking-[0.18em] text-white/80">
+          <div className="absolute inset-x-0 bottom-0 flex flex-col gap-3 bg-gradient-to-t from-black/85 via-black/55 to-black/35 px-4 pb-4 pt-3 text-white">
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-white/95 [text-shadow:0_1px_3px_rgb(0_0_0/0.85)]">
               Hole {meta.hole}{' '}
-              <span className="text-white/60">
+              <span className="text-white/90">
                 • Par {meta.par} • {meta.whiteYards} yds (white)
               </span>
             </p>
-            <p className="text-lg font-semibold">
-              {recorded !== undefined ? `${recorded} strokes` : 'Score pending'}
+            <p className="text-sm font-semibold">
+              {recorded !== undefined &&
+              recordedTier !== undefined &&
+              recordedDelta !== undefined ? (
+                <span
+                  className={holeScoreHeroMainClasses(recordedTier)}
+                  aria-label={holeScoreAriaDescription(recorded, meta.par)}
+                >
+                  {holeScoreSimpleLine(recorded, meta.par)}
+                </span>
+              ) : null}
             </p>
           </div>
         </div>
@@ -460,8 +488,7 @@ function PlayGolfPage() {
           scoreTargetHole ? teePlayerForHole(scoreTargetHole) : undefined
         }
         teammates={teammates}
-        teePlayerIdByHole={teePlayerIdByHole}
-        teeCap={teeCap}
+        teeMinimum={teeMinimum}
         openedFromNextNavigation={scoreOpenedViaNext}
         onConfirm={(strokeTotal, pickPlayerId) =>
           void confirmScore(strokeTotal, pickPlayerId)
@@ -472,26 +499,13 @@ function PlayGolfPage() {
   )
 }
 
-function teeUsageExcludingHole(
-  teePlayerIdByHole: Record<string, string>,
-  excludeHole: number,
-): Map<string, number> {
-  const usage = new Map<string, number>()
-  for (const [h, id] of Object.entries(teePlayerIdByHole)) {
-    if (Number(h) === excludeHole) continue
-    usage.set(id, (usage.get(id) ?? 0) + 1)
-  }
-  return usage
-}
-
 function ScoreCaptureDialog({
   open,
   hole,
   existingStrokes,
   existingTeePlayerId,
   teammates,
-  teePlayerIdByHole,
-  teeCap,
+  teeMinimum,
   openedFromNextNavigation,
   onConfirm,
   onCancel,
@@ -501,8 +515,7 @@ function ScoreCaptureDialog({
   existingStrokes?: number
   existingTeePlayerId?: string
   teammates: Array<{ id: string; name: string }>
-  teePlayerIdByHole: Record<string, string>
-  teeCap: number
+  teeMinimum: number
   openedFromNextNavigation: boolean
   onConfirm: (strokes: number, teePlayerId: string) => void
   onCancel: () => void
@@ -512,11 +525,6 @@ function ScoreCaptureDialog({
   const [strokesInput, setStrokesInput] = React.useState('')
   const [teePlayerId, setTeePlayerId] = React.useState('')
   const [teeTouched, setTeeTouched] = React.useState(false)
-
-  const usageExHole = React.useMemo(
-    () => (hole ? teeUsageExcludingHole(teePlayerIdByHole, hole) : new Map()),
-    [hole, teePlayerIdByHole],
-  )
 
   React.useEffect(() => {
     if (!open || hole === null) return
@@ -542,9 +550,15 @@ function ScoreCaptureDialog({
     setStrokesInput(String(Math.min(20, Math.max(1, base + delta))))
   }
 
-  const quick = Array.from(new Set([par - 2, par - 1, par, par + 1, par + 2]))
+  const quick = Array.from(new Set([par - 1, par, par + 1]))
     .filter((n) => n >= 1)
     .sort((a, b) => a - b)
+
+  const strokesParsed = Number.parseInt(strokesInput, 10)
+  const strokesTintTier =
+    Number.isFinite(strokesParsed) && strokesParsed >= 1 && strokesParsed <= 20
+      ? holeScoreTier(deltaForHole(strokesParsed, par))
+      : undefined
 
   const teeError = teeTouched && !teePlayerId
 
@@ -602,17 +616,11 @@ function ScoreCaptureDialog({
                 required
               >
                 <option value="">Select a teammate…</option>
-                {teammates.map((tm) => {
-                  const usedElsewhere = usageExHole.get(tm.id) ?? 0
-                  const disabled =
-                    usedElsewhere >= teeCap && teePlayerId !== tm.id
-                  return (
-                    <option key={tm.id} value={tm.id} disabled={disabled}>
-                      {tm.name}
-                      {disabled ? ' (tee cap reached)' : ''}
-                    </option>
-                  )
-                })}
+                {teammates.map((tm) => (
+                  <option key={tm.id} value={tm.id}>
+                    {tm.name}
+                  </option>
+                ))}
               </select>
               {teeError && (
                 <p className="text-xs text-destructive">
@@ -620,7 +628,7 @@ function ScoreCaptureDialog({
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                Each teammate&apos;s tee shot must be used at least {teeCap}{' '}
+                Each teammate&apos;s tee shot must be used at least {teeMinimum}{' '}
                 times.
               </p>
             </div>
@@ -637,19 +645,21 @@ function ScoreCaptureDialog({
                 <MinusIcon className="size-5" />
               </Button>
               <div className="flex min-w-0 flex-1 flex-wrap gap-2 justify-center">
-                {quick.map((score) => (
-                  <Button
-                    key={score}
-                    type="button"
-                    size="sm"
-                    variant={score === par ? 'default' : 'outline'}
-                    className="rounded-full"
-                    onClick={() => setStrokesInput(score.toString())}
-                  >
-                    {score}
-                    {score === par ? ' • Par' : ''}
-                  </Button>
-                ))}
+                {quick.map((score) => {
+                  const qt = holeScoreTier(deltaForHole(score, par))
+                  return (
+                    <Button
+                      key={score}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className={cn(holeScorePresetButtonClasses(qt))}
+                      onClick={() => setStrokesInput(score.toString())}
+                    >
+                      {holeScoreSimpleLine(score, par)}
+                    </Button>
+                  )
+                })}
               </div>
               <Button
                 type="button"
@@ -666,7 +676,11 @@ function ScoreCaptureDialog({
               <Label htmlFor="strokes">Strokes</Label>
               <Input
                 id="strokes"
-                className="h-11 text-center text-lg font-semibold tabular-nums"
+                className={cn(
+                  'h-11 text-center text-lg font-semibold tabular-nums',
+                  strokesTintTier !== undefined &&
+                    holeScoreInputTintClasses(strokesTintTier),
+                )}
                 inputMode="numeric"
                 pattern="[0-9]*"
                 value={strokesInput}
