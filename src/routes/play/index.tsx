@@ -355,7 +355,7 @@ function PlayGolfPage() {
                 <div className="space-y-3 text-sm">
                   <div>
                     <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      Team vs par
+                      {profile.teamName}
                     </p>
                     {scorecardFooter.holesWithScore === 0 ? (
                       <p className="mt-0.5 text-muted-foreground">
@@ -365,9 +365,9 @@ function PlayGolfPage() {
                       <>
                         <p className="mt-0.5 text-lg font-semibold leading-tight tabular-nums">
                           {scorecardFooter.vsParLabel}
-                          <span className="ml-2 text-sm font-normal text-muted-foreground">
-                            ({scorecardFooter.holesWithScore} hole
-                            {scorecardFooter.holesWithScore === 1 ? '' : 's'})
+                          <span className="ml-2 text-sm font-normal tabular-nums text-muted-foreground">
+                            ({scorecardFooter.holesWithScore} /{' '}
+                            {HOLE_META.length} holes)
                           </span>
                         </p>
                       </>
@@ -381,13 +381,12 @@ function PlayGolfPage() {
                       <ul className="mt-1.5 space-y-1">
                         {teammates.map((tm) => {
                           const n = scorecardFooter.teeByPlayer.get(tm.id) ?? 0
-                          const first = tm.name.split(/\s+/)[0] ?? tm.name
                           return (
                             <li
                               key={tm.id}
                               className="flex items-center justify-between text-xs"
                             >
-                              <span className="text-foreground">{first}</span>
+                              <span className="text-foreground">{tm.name}</span>
                               <span className="tabular-nums text-muted-foreground">
                                 {n} / {teeCap}
                               </span>
@@ -578,8 +577,7 @@ function ScoreCaptureDialog({
               </>
             ) : (
               <>
-                Choose whose drive was used and enter the team&apos;s gross
-                strokes. Tap outside the dialog to close without saving.
+                Choose whose drive was used and enter the team&apos;s strokes.
               </>
             )}
           </DialogDescription>
@@ -622,7 +620,8 @@ function ScoreCaptureDialog({
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                Each player can be tee player up to {teeCap} times (18 holes).
+                Each teammate&apos;s tee shot must be used at least {teeCap}{' '}
+                times.
               </p>
             </div>
 
@@ -673,9 +672,6 @@ function ScoreCaptureDialog({
                 value={strokesInput}
                 onChange={(e) => setStrokesInput(e.target.value)}
               />
-              <p className="text-xs text-muted-foreground">
-                Par {par} on this hole. Accepts 1–20.
-              </p>
             </div>
           </div>
         )}

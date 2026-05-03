@@ -33,9 +33,9 @@ export const Route = createFileRoute('/leaderboard')({
 
 function LeaderboardPage() {
   const { data, isPending } = useQuery(convexQuery(api.golf.leaderboard, {}))
-  const [backTo, setBackTo] = React.useState<ReturnType<
-    typeof postSetupBackPath
-  >>(() => '/')
+  const [backTo, setBackTo] = React.useState<
+    ReturnType<typeof postSetupBackPath>
+  >(() => '/')
 
   React.useEffect(() => {
     setBackTo(postSetupBackPath())
@@ -58,9 +58,7 @@ function LeaderboardPage() {
           <h1 className="font-heading text-2xl font-semibold tracking-tight">
             Leaderboard
           </h1>
-          <p className="text-xs text-muted-foreground">
-            {COURSE_NAME} • Team vs par (scramble)
-          </p>
+          <p className="text-xs text-muted-foreground">{COURSE_NAME}</p>
         </div>
       </div>
 
