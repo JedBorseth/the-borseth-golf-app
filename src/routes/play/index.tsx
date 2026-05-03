@@ -2,7 +2,7 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { ConvexError } from 'convex/values'
 import * as React from 'react'
 import { useMutation } from 'convex/react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { convexQuery } from '@convex-dev/react-query'
 import {
   ArrowLeftIcon,
@@ -16,6 +16,7 @@ import {
 
 import { api } from '../../../convex/_generated/api'
 import type { DeviceProfile } from '~/lib/device-profile'
+import type { LocalScorecard } from '~/lib/local-scores'
 import { Button, buttonVariants } from '~/components/ui/button'
 import {
   Dialog,
@@ -53,6 +54,18 @@ import {
   holeScoreTier,
   relativeToParShortLabel,
 } from '~/lib/hole-score-indicator'
+import {
+  clearLocalScorecard,
+  holesPayloadFromScorecard,
+  loadLocalScorecard,
+  saveLocalScorecard,
+} from '~/lib/local-scores'
+import { isOfflineOrNetworkError } from '~/lib/network-error'
+import {
+  clearLastHoleForTeam,
+  loadLastHoleForTeam,
+  saveLastHoleForTeam,
+} from '~/lib/play-position'
 import { cn } from '~/lib/utils'
 
 export const Route = createFileRoute('/play/')({
@@ -73,6 +86,11 @@ function PlayGolfPage() {
   const [skipNextScorePromptForHole, setSkipNextScorePromptForHole] =
     React.useState<number | null>(null)
   const [scoreOpenedViaNext, setScoreOpenedViaNext] = React.useState(false)
+  const [localSyncVersion, setLocalSyncVersion] = React.useState(0)
+  const [serverInSync, setServerInSync] = React.useState(true)
+  const [finishingRound, setFinishingRound] = React.useState(false)
+
+  const queryClient = useQueryClient()
 
   React.useEffect(() => {
     const nextProfile = loadProfile()
@@ -92,15 +110,124 @@ function PlayGolfPage() {
 
   const teamName = profile?.teamName ?? ''
 
+  const skipNextHolePersist = React.useRef(true)
+
+  React.useEffect(() => {
+    if (!hydrated || !teamName) return
+    skipNextHolePersist.current = true
+    const saved = loadLastHoleForTeam(teamName)
+    setCurrentHole(saved ?? 1)
+  }, [hydrated, teamName])
+
+  React.useEffect(() => {
+    if (!hydrated || !teamName) return
+    if (skipNextHolePersist.current) {
+      skipNextHolePersist.current = false
+      return
+    }
+    saveLastHoleForTeam(teamName, currentHole)
+  }, [hydrated, teamName, currentHole])
+
   const scoresQuery = useQuery({
     ...convexQuery(api.golf.scoresForTeam, { teamName }),
     enabled: hydrated && !!teamName,
+    gcTime: 1000 * 60 * 60 * 24,
   })
 
-  const strokes = scoresQuery.data?.strokes ?? {}
-  const teePlayerIdByHole = scoresQuery.data?.teePlayerIdByHole ?? {}
+  const serverStrokes = scoresQuery.data?.strokes ?? {}
+  const serverTeeByHole = scoresQuery.data?.teePlayerIdByHole ?? {}
 
-  const submitHoleScore = useMutation(api.golf.submitHoleScore)
+  React.useEffect(() => {
+    if (!hydrated || !teamName || !profile?.teamId || !scoresQuery.isSuccess)
+      return
+    if (loadLocalScorecard(teamName)) return
+    const s = scoresQuery.data.strokes
+    const t = scoresQuery.data.teePlayerIdByHole
+    if (Object.keys(s).length === 0) return
+    saveLocalScorecard({
+      teamName,
+      teamId: profile.teamId,
+      strokes: { ...s },
+      teePlayerIdByHole: { ...t },
+    })
+    setLocalSyncVersion((v) => v + 1)
+  }, [
+    hydrated,
+    teamName,
+    profile?.teamId,
+    scoresQuery.isSuccess,
+    scoresQuery.data,
+  ])
+
+  const strokes = React.useMemo(() => {
+    const local = loadLocalScorecard(teamName)
+    if (local && local.teamId === profile?.teamId) {
+      return local.strokes
+    }
+    return serverStrokes
+  }, [teamName, profile?.teamId, serverStrokes, localSyncVersion])
+
+  const teePlayerIdByHole = React.useMemo(() => {
+    const local = loadLocalScorecard(teamName)
+    if (local && local.teamId === profile?.teamId) {
+      return local.teePlayerIdByHole
+    }
+    return serverTeeByHole
+  }, [teamName, profile?.teamId, serverTeeByHole, localSyncVersion])
+
+  const syncFullScorecard = useMutation(api.golf.syncFullScorecard)
+
+  const pushFullScorecardToConvex = React.useCallback(
+    async (opts?: { silentConvexError?: boolean }) => {
+      if (!teamName || !profile?.teamId) return
+      const card = loadLocalScorecard(teamName)
+      if (!card || card.teamId !== profile.teamId) return
+      const holes = holesPayloadFromScorecard(
+        card.strokes,
+        card.teePlayerIdByHole,
+      )
+      if (holes.length === 0) return
+      try {
+        await syncFullScorecard({
+          teamName: card.teamName,
+          teamId: card.teamId,
+          holes,
+        })
+        setServerInSync(true)
+        void queryClient.invalidateQueries({
+          queryKey: convexQuery(api.golf.scoresForTeam, { teamName }).queryKey,
+        })
+      } catch (e: unknown) {
+        setServerInSync(false)
+        if (e instanceof ConvexError && typeof e.data === 'string') {
+          if (!opts?.silentConvexError) window.alert(e.data)
+          return
+        }
+        if (!opts?.silentConvexError && !isOfflineOrNetworkError(e)) {
+          const msg =
+            e instanceof Error ? e.message : 'Could not reach score server'
+          window.alert(msg)
+        }
+      }
+    },
+    [teamName, profile?.teamId, syncFullScorecard, queryClient],
+  )
+
+  React.useEffect(() => {
+    if (!hydrated || !teamName) return
+    void pushFullScorecardToConvex({ silentConvexError: true })
+    const id = setInterval(
+      () => void pushFullScorecardToConvex({ silentConvexError: true }),
+      45_000,
+    )
+    const onOnline = () =>
+      void pushFullScorecardToConvex({ silentConvexError: true })
+    window.addEventListener('online', onOnline)
+    return () => {
+      clearInterval(id)
+      window.removeEventListener('online', onOnline)
+    }
+  }, [hydrated, teamName, pushFullScorecardToConvex])
 
   const teammates = React.useMemo(
     () => (profile?.playerId ? teammatesForPlayer(profile.playerId) : []),
@@ -115,6 +242,11 @@ function PlayGolfPage() {
       (id) => id === profile.playerId,
     ).length
   }, [profile?.playerId, teePlayerIdByHole])
+
+  const completeHolesCount = React.useMemo(
+    () => holesPayloadFromScorecard(strokes, teePlayerIdByHole).length,
+    [strokes, teePlayerIdByHole],
+  )
 
   const scorecardFooter = React.useMemo(() => {
     let totalStrokes = 0
@@ -193,28 +325,115 @@ function PlayGolfPage() {
   async function confirmScore(strokesArg: number, teePlayerId: string) {
     if (!profile?.teamName || !profile.teamId || scoreTargetHole === null)
       return
-    try {
-      await submitHoleScore({
+    const hole = scoreTargetHole
+
+    const prev =
+      loadLocalScorecard(profile.teamName) ?? {
         teamName: profile.teamName,
         teamId: profile.teamId,
-        hole: scoreTargetHole,
-        strokes: strokesArg,
-        teePlayerId,
-      })
-    } catch (e: unknown) {
-      const msg =
-        e instanceof ConvexError && typeof e.data === 'string'
-          ? e.data
-          : e instanceof Error
-            ? e.message
-            : 'Could not save score'
-      window.alert(msg)
-      return
+        strokes: {},
+        teePlayerIdByHole: {},
+      }
+
+    const next: LocalScorecard = {
+      teamName: profile.teamName,
+      teamId: profile.teamId,
+      strokes: { ...prev.strokes, [String(hole)]: strokesArg },
+      teePlayerIdByHole: {
+        ...prev.teePlayerIdByHole,
+        [String(hole)]: teePlayerId,
+      },
     }
-    setSkipNextScorePromptForHole((s) => (s === scoreTargetHole ? null : s))
+    saveLocalScorecard(next)
+    setLocalSyncVersion((v) => v + 1)
+
+    setSkipNextScorePromptForHole((s) => (s === hole ? null : s))
     setScoreOpenedViaNext(false)
     setScoreDialogOpen(false)
     setScoreTargetHole(null)
+
+    const holes = holesPayloadFromScorecard(next.strokes, next.teePlayerIdByHole)
+    if (holes.length === 0) return
+
+    try {
+      await syncFullScorecard({
+        teamName: next.teamName,
+        teamId: next.teamId,
+        holes,
+      })
+      setServerInSync(true)
+      void queryClient.invalidateQueries({
+        queryKey: convexQuery(api.golf.scoresForTeam, {
+          teamName: profile.teamName,
+        }).queryKey,
+      })
+    } catch (e: unknown) {
+      setServerInSync(false)
+      if (e instanceof ConvexError && typeof e.data === 'string') {
+        window.alert(e.data)
+        return
+      }
+      if (isOfflineOrNetworkError(e)) {
+        return
+      }
+      const msg =
+        e instanceof Error ? e.message : 'Could not reach score server'
+      window.alert(
+        `${msg}\n\nYour full scorecard is saved on this device; it will sync when the connection allows.`,
+      )
+    }
+  }
+
+  async function handleFinishRound() {
+    if (!profile?.teamName || !profile.teamId) return
+    const card = loadLocalScorecard(profile.teamName)
+    if (!card || card.teamId !== profile.teamId) {
+      window.alert('Scorecard not found on this device.')
+      return
+    }
+    const holes = holesPayloadFromScorecard(
+      card.strokes,
+      card.teePlayerIdByHole,
+    )
+    if (holes.length !== 18) {
+      window.alert(
+        'Enter a score and tee player for all 18 holes before finishing your round.',
+      )
+      return
+    }
+    setFinishingRound(true)
+    try {
+      await syncFullScorecard({
+        teamName: card.teamName,
+        teamId: card.teamId,
+        holes,
+      })
+      clearLocalScorecard(profile.teamName)
+      clearLastHoleForTeam(profile.teamName)
+      setCurrentHole(1)
+      setLocalSyncVersion((v) => v + 1)
+      setServerInSync(true)
+      void queryClient.invalidateQueries({
+        queryKey: convexQuery(api.golf.scoresForTeam, {
+          teamName: profile.teamName,
+        }).queryKey,
+      })
+      void navigate({ to: '/leaderboard', replace: true })
+    } catch (e: unknown) {
+      if (e instanceof ConvexError && typeof e.data === 'string') {
+        window.alert(e.data)
+      } else if (isOfflineOrNetworkError(e)) {
+        window.alert(
+          'You need a working internet connection to submit a completed round to the server. Your scorecard is still saved on this device — try again when you are online.',
+        )
+      } else {
+        window.alert(
+          e instanceof Error ? e.message : 'Could not submit your round.',
+        )
+      }
+    } finally {
+      setFinishingRound(false)
+    }
   }
 
   function cancelScoreDialog() {
@@ -267,6 +486,12 @@ function PlayGolfPage() {
             {profile.playerId && teammates.length > 0 && (
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Your tee shots: {myTeeDriveCount} / {teeMinimum}
+              </p>
+            )}
+            {!serverInSync && scorecardFooter.holesWithScore > 0 && (
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                Scorecard saved on this device. The leaderboard will update when
+                the server sync succeeds.
               </p>
             )}
           </div>
@@ -468,14 +693,28 @@ function PlayGolfPage() {
           <ChevronLeftIcon className="size-5" />
           Back
         </Button>
-        <Button
-          className="h-12 flex-1 rounded-xl gap-2"
-          disabled={currentHole >= 18}
-          onClick={handleForward}
-        >
-          {currentHole >= 18 ? 'Round complete' : 'Next'}
-          <ChevronRightIcon className="size-5" />
-        </Button>
+        {currentHole < 18 ? (
+          <Button
+            className="h-12 flex-1 rounded-xl gap-2"
+            onClick={handleForward}
+          >
+            Next
+            <ChevronRightIcon className="size-5" />
+          </Button>
+        ) : (
+          <Button
+            className="h-12 flex-1 rounded-xl gap-2"
+            disabled={completeHolesCount !== 18 || finishingRound}
+            onClick={() => void handleFinishRound()}
+          >
+            {finishingRound
+              ? 'Submitting…'
+              : completeHolesCount === 18
+                ? 'Finish round'
+                : 'All holes required'}
+            <ChevronRightIcon className="size-5" />
+          </Button>
+        )}
       </div>
 
       <ScoreCaptureDialog
