@@ -370,10 +370,6 @@ function PlayGolfPage() {
                             {scorecardFooter.holesWithScore === 1 ? '' : 's'})
                           </span>
                         </p>
-                        <p className="text-xs text-muted-foreground">
-                          {scorecardFooter.totalStrokes} strokes ·{' '}
-                          {scorecardFooter.totalPar} par so far
-                        </p>
                       </>
                     )}
                   </div>
@@ -384,10 +380,8 @@ function PlayGolfPage() {
                       </p>
                       <ul className="mt-1.5 space-y-1">
                         {teammates.map((tm) => {
-                          const n =
-                            scorecardFooter.teeByPlayer.get(tm.id) ?? 0
-                          const first =
-                            tm.name.split(/\s+/)[0] ?? tm.name
+                          const n = scorecardFooter.teeByPlayer.get(tm.id) ?? 0
+                          const first = tm.name.split(/\s+/)[0] ?? tm.name
                           return (
                             <li
                               key={tm.id}
