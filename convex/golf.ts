@@ -1,10 +1,7 @@
 import { ConvexError, v } from 'convex/values'
 import { parForHole } from '../src/lib/golf-data'
 import { mutation, query } from './_generated/server'
-import {
-  maxTeeDrivesPerPlayer,
-  rosterPlayerIdsForTeamId,
-} from './golfRoster'
+import { rosterPlayerIdsForTeamId } from './golfRoster'
 
 export const leaderboard = query({
   args: {},
@@ -98,30 +95,6 @@ export const submitHoleScore = mutation({
       throw new ConvexError('Tee player not on this team')
     }
 
-    const cap = maxTeeDrivesPerPlayer()
-
-    const teamRows = await ctx.db
-      .query('teamHoleScores')
-      .withIndex('by_team_hole', (q) => q.eq('teamName', args.teamName))
-      .collect()
-
-    const usage = new Map<string, number>()
-    for (const row of teamRows) {
-      if (row.hole === args.hole) continue
-      if (!row.teePlayerId) continue
-      usage.set(
-        row.teePlayerId,
-        (usage.get(row.teePlayerId) ?? 0) + 1,
-      )
-    }
-
-    const nextCount = (usage.get(args.teePlayerId) ?? 0) + 1
-    if (nextCount > cap) {
-      throw new ConvexError(
-        `Each player can only be tee player up to ${cap} times per round`,
-      )
-    }
-
     const existing = await ctx.db
       .query('teamHoleScores')
       .withIndex('by_team_hole', (q) =>
@@ -171,9 +144,6 @@ export const syncFullScorecard = mutation({
       throw new ConvexError('Unknown team')
     }
 
-    const cap = maxTeeDrivesPerPlayer()
-    const usage = new Map<string, number>()
-
     const byHole = new Map<
       number,
       { hole: number; strokes: number; teePlayerId: string }
@@ -190,15 +160,6 @@ export const syncFullScorecard = mutation({
       if (!roster.includes(h.teePlayerId)) {
         throw new ConvexError(`Tee player not on this team (hole ${h.hole})`)
       }
-      usage.set(h.teePlayerId, (usage.get(h.teePlayerId) ?? 0) + 1)
-    }
-
-    for (const [, count] of usage) {
-      if (count > cap) {
-        throw new ConvexError(
-          `Each player can only be tee player up to ${cap} times per round`,
-        )
-      }
     }
 
     const existing = await ctx.db
@@ -207,7 +168,7 @@ export const syncFullScorecard = mutation({
       .collect()
 
     for (const row of existing) {
-      await ctx.db.delete(row._id)
+      await ctx.db.delete('teamHoleScores', row._id)
     }
 
     for (const h of uniqueHoles) {

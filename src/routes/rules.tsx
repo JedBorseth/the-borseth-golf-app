@@ -57,8 +57,6 @@ function RulesPage() {
               <li>
                 You must use 3 tee shots from each team member during the round.
               </li>
-              <li>Gimmies inside a scorecard length.</li>
-              <li>Pick up after double par to keep pace.</li>
             </ul>
           </RuleSection>
           <RuleSection title="Scoring">
