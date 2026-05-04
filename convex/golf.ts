@@ -144,9 +144,6 @@ export const syncFullScorecard = mutation({
       throw new ConvexError('Unknown team')
     }
 
-    const cap = maxTeeDrivesPerPlayer()
-    const usage = new Map<string, number>()
-
     const byHole = new Map<
       number,
       { hole: number; strokes: number; teePlayerId: string }
@@ -163,15 +160,6 @@ export const syncFullScorecard = mutation({
       if (!roster.includes(h.teePlayerId)) {
         throw new ConvexError(`Tee player not on this team (hole ${h.hole})`)
       }
-      usage.set(h.teePlayerId, (usage.get(h.teePlayerId) ?? 0) + 1)
-    }
-
-    for (const [, count] of usage) {
-      if (count > cap) {
-        throw new ConvexError(
-          `Each player can only be tee player up to ${cap} times per round`,
-        )
-      }
     }
 
     const existing = await ctx.db
@@ -180,7 +168,7 @@ export const syncFullScorecard = mutation({
       .collect()
 
     for (const row of existing) {
-      await ctx.db.delete(row._id)
+      await ctx.db.delete('teamHoleScores', row._id)
     }
 
     for (const h of uniqueHoles) {
