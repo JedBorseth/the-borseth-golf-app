@@ -18,9 +18,8 @@ import {
   CardTitle,
 } from '~/components/ui/card'
 import { clearProfile, loadProfile } from '~/lib/device-profile'
+import { IOS_PWA_TIP_DISMISSED_KEY } from '~/lib/device-storage-clear'
 import { cn } from '~/lib/utils'
-
-const IOS_PWA_TIP_DISMISSED_KEY = 'borseth-ios-pwa-tip-dismissed-v1'
 
 export const Route = createFileRoute('/')({
   component: WelcomePage,
@@ -68,7 +67,10 @@ function WelcomePage() {
           Family weekend
         </p>
         <h1 className="text-balance font-heading text-3xl font-semibold tracking-tight sm:text-4xl">
-          Borseth Cup
+          Borseth{' '}
+          <Link to="/admin" className="cursor-text">
+            Cup
+          </Link>
         </h1>
         <p className="text-pretty text-sm text-muted-foreground">
           Rules, live leaderboard, and an easy phone-first scorecard for the
@@ -80,8 +82,7 @@ function WelcomePage() {
         <CardHeader className="pb-2">
           <CardTitle className="text-lg">Play golf</CardTitle>
           <CardDescription>
-            One-time prompts on this device, then jump straight into the
-            round.
+            One-time prompts on this device, then jump straight into the round.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
@@ -176,13 +177,15 @@ function IosAddToHomeScreenTip({ onDismiss }: { onDismiss: () => void }) {
           <p className="mt-2 text-left text-xs leading-relaxed text-foreground">
             In <strong>Safari</strong>, tap the{' '}
             <span className="inline-flex items-center gap-0.5 font-semibold">
-              <ShareIcon className="inline size-3.5 translate-y-px" aria-hidden />
+              <ShareIcon
+                className="inline size-3.5 translate-y-px"
+                aria-hidden
+              />
               Share
             </span>{' '}
             button <strong className="font-semibold">at the bottom</strong> of
             the screen (square with an arrow pointing up). Scroll the list, tap{' '}
-            <strong>Add to Home Screen</strong>, then tap{' '}
-            <strong>Add</strong>.
+            <strong>Add to Home Screen</strong>, then tap <strong>Add</strong>.
           </p>
         </div>
         <ChevronDown

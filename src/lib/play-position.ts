@@ -27,8 +27,9 @@ function writeAll(map: Record<string, number>) {
 export function loadLastHoleForTeam(teamName: string): number | null {
   if (!teamName) return null
   const v = readAll()[teamName]
-  if (v === undefined) return null
-  return Math.max(1, Math.min(18, Math.round(v)))
+  return typeof v === 'number'
+    ? Math.max(1, Math.min(18, Math.round(v)))
+    : null
 }
 
 export function saveLastHoleForTeam(teamName: string, hole: number) {
@@ -44,4 +45,9 @@ export function clearLastHoleForTeam(teamName: string) {
   const all = readAll()
   delete all[teamName]
   writeAll(all)
+}
+
+export function clearAllLastHolePositions() {
+  if (typeof localStorage === 'undefined') return
+  localStorage.removeItem(STORAGE_KEY)
 }

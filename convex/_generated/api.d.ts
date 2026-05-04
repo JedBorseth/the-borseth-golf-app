@@ -8,8 +8,10 @@
  * @module
  */
 
+import type * as admin from "../admin.js";
 import type * as golf from "../golf.js";
 import type * as golfRoster from "../golfRoster.js";
+import type * as syncTeamHoleScores from "../syncTeamHoleScores.js";
 
 import type {
   ApiFromModules,
@@ -18,8 +20,10 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  admin: typeof admin;
   golf: typeof golf;
   golfRoster: typeof golfRoster;
+  syncTeamHoleScores: typeof syncTeamHoleScores;
 }>;
 
 /**

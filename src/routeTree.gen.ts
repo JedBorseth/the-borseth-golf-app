@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as RulesRouteImport } from './routes/rules'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as PlayRouteRouteImport } from './routes/play/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PlayIndexRouteImport } from './routes/play/index'
@@ -24,6 +25,11 @@ const RulesRoute = RulesRouteImport.update({
 const LeaderboardRoute = LeaderboardRouteImport.update({
   id: '/leaderboard',
   path: '/leaderboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlayRouteRoute = PlayRouteRouteImport.update({
@@ -50,6 +56,7 @@ const PlaySetupRoute = PlaySetupRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/play': typeof PlayRouteRouteWithChildren
+  '/admin': typeof AdminRoute
   '/leaderboard': typeof LeaderboardRoute
   '/rules': typeof RulesRoute
   '/play/setup': typeof PlaySetupRoute
@@ -57,6 +64,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/leaderboard': typeof LeaderboardRoute
   '/rules': typeof RulesRoute
   '/play/setup': typeof PlaySetupRoute
@@ -66,6 +74,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/play': typeof PlayRouteRouteWithChildren
+  '/admin': typeof AdminRoute
   '/leaderboard': typeof LeaderboardRoute
   '/rules': typeof RulesRoute
   '/play/setup': typeof PlaySetupRoute
@@ -76,16 +85,18 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/play'
+    | '/admin'
     | '/leaderboard'
     | '/rules'
     | '/play/setup'
     | '/play/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/leaderboard' | '/rules' | '/play/setup' | '/play'
+  to: '/' | '/admin' | '/leaderboard' | '/rules' | '/play/setup' | '/play'
   id:
     | '__root__'
     | '/'
     | '/play'
+    | '/admin'
     | '/leaderboard'
     | '/rules'
     | '/play/setup'
@@ -95,6 +106,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PlayRouteRoute: typeof PlayRouteRouteWithChildren
+  AdminRoute: typeof AdminRoute
   LeaderboardRoute: typeof LeaderboardRoute
   RulesRoute: typeof RulesRoute
 }
@@ -113,6 +125,13 @@ declare module '@tanstack/react-router' {
       path: '/leaderboard'
       fullPath: '/leaderboard'
       preLoaderRoute: typeof LeaderboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/play': {
@@ -163,6 +182,7 @@ const PlayRouteRouteWithChildren = PlayRouteRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PlayRouteRoute: PlayRouteRouteWithChildren,
+  AdminRoute: AdminRoute,
   LeaderboardRoute: LeaderboardRoute,
   RulesRoute: RulesRoute,
 }

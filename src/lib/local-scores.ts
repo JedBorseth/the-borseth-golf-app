@@ -59,6 +59,11 @@ export function clearLocalScorecard(teamName: string) {
   writeAll(all)
 }
 
+export function clearAllLocalScorecards() {
+  if (typeof localStorage === 'undefined') return
+  localStorage.removeItem(STORAGE_KEY)
+}
+
 /** Holes to send to Convex (sorted). Only incomplete rows omitted. */
 export function holesPayloadFromScorecard(
   strokes: Record<string, number>,
