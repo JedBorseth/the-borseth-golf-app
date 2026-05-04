@@ -2,6 +2,7 @@ import { ConvexError, v } from 'convex/values'
 import { parForHole } from '../src/lib/golf-data'
 import { mutation, query } from './_generated/server'
 import { rosterPlayerIdsForTeamId } from './golfRoster'
+import { replaceFullTeamHoleScores } from './syncTeamHoleScores'
 
 export const leaderboard = query({
   args: {},
@@ -139,46 +140,6 @@ export const syncFullScorecard = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    const roster = rosterPlayerIdsForTeamId(args.teamId)
-    if (roster.length === 0) {
-      throw new ConvexError('Unknown team')
-    }
-
-    const byHole = new Map<
-      number,
-      { hole: number; strokes: number; teePlayerId: string }
-    >()
-    for (const h of args.holes) {
-      byHole.set(h.hole, h)
-    }
-    const uniqueHoles = [...byHole.values()].sort((a, b) => a.hole - b.hole)
-
-    for (const h of uniqueHoles) {
-      if (h.hole < 1 || h.hole > 18) {
-        throw new ConvexError('Invalid hole')
-      }
-      if (!roster.includes(h.teePlayerId)) {
-        throw new ConvexError(`Tee player not on this team (hole ${h.hole})`)
-      }
-    }
-
-    const existing = await ctx.db
-      .query('teamHoleScores')
-      .withIndex('by_team_hole', (q) => q.eq('teamName', args.teamName))
-      .collect()
-
-    for (const row of existing) {
-      await ctx.db.delete('teamHoleScores', row._id)
-    }
-
-    for (const h of uniqueHoles) {
-      await ctx.db.insert('teamHoleScores', {
-        teamName: args.teamName,
-        teamId: args.teamId,
-        hole: h.hole,
-        strokes: h.strokes,
-        teePlayerId: h.teePlayerId,
-      })
-    }
+    await replaceFullTeamHoleScores(ctx, args)
   },
 })
