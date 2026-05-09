@@ -2,7 +2,7 @@ import { ConvexError, v } from 'convex/values'
 import { parForHole } from '../src/lib/golf-data'
 import { mutation, query } from './_generated/server'
 import { rosterPlayerIdsForTeamId } from './golfRoster'
-import { replaceFullTeamHoleScores } from './syncTeamHoleScores'
+import { upsertTeamHoleScores } from './syncTeamHoleScores'
 
 export const leaderboard = query({
   args: {},
@@ -124,8 +124,8 @@ export const submitHoleScore = mutation({
 })
 
 /**
- * Replace this team's entire scorecard on the server. Clients should send every
- * scored hole so nothing is missed after offline play (full round snapshot).
+ * Upsert scored holes for this team. Holes omitted from the payload are not deleted
+ * (teammate devices may send partial updates). Send every scored hole you know about.
  */
 export const syncFullScorecard = mutation({
   args: {
@@ -140,6 +140,6 @@ export const syncFullScorecard = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    await replaceFullTeamHoleScores(ctx, args)
+    await upsertTeamHoleScores(ctx, args)
   },
 })
