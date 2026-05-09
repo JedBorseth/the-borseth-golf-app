@@ -4,6 +4,57 @@ import { mutation, query } from './_generated/server'
 import { rosterPlayerIdsForTeamId } from './golfRoster'
 import { upsertTeamHoleScores } from './syncTeamHoleScores'
 
+/** Placeholder hole so first teammate can register {@link teamName} before any strokes (see {@link ensureTeamPlaceholderScorecard}). */
+export const SETUP_PLACEHOLDER_HOLE = 0
+
+export const teamDisplayNameOnServer = query({
+  args: { teamId: v.string() },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db.query('teamHoleScores').collect()
+    let found: string | null = null
+    for (const row of rows) {
+      if (row.teamId !== args.teamId) continue
+      if (row.hole === SETUP_PLACEHOLDER_HOLE) {
+        return row.teamName
+      }
+      if (found === null) found = row.teamName
+    }
+    return found
+  },
+})
+
+export const ensureTeamPlaceholderScorecard = mutation({
+  args: {
+    teamId: v.string(),
+    teamName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const roster = rosterPlayerIdsForTeamId(args.teamId)
+    if (roster.length === 0) {
+      throw new ConvexError('Unknown team')
+    }
+
+    const name = args.teamName.trim()
+    if (!name) {
+      throw new ConvexError('Team name is required')
+    }
+
+    const teamRows = (await ctx.db.query('teamHoleScores').collect()).filter(
+      (r) => r.teamId === args.teamId,
+    )
+    if (teamRows.length > 0) {
+      return
+    }
+
+    await ctx.db.insert('teamHoleScores', {
+      teamName: name,
+      teamId: args.teamId,
+      hole: SETUP_PLACEHOLDER_HOLE,
+      strokes: 0,
+    })
+  },
+})
+
 export const leaderboard = query({
   args: {},
   handler: async (ctx) => {
@@ -69,6 +120,7 @@ export const scoresForTeam = query({
     const teePlayerIdByHole: Record<string, string> = {}
 
     for (const row of rows) {
+      if (row.hole < 1 || row.hole > 18) continue
       strokes[String(row.hole)] = row.strokes
       if (row.teePlayerId) {
         teePlayerIdByHole[String(row.hole)] = row.teePlayerId
