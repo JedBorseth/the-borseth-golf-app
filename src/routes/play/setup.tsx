@@ -42,6 +42,7 @@ function PlaySetupPage() {
   const takenOpts = convexQuery(api.assignedPlayers.listTakenPlayerIds, {})
   const { data: takenPlayerIds, isPending: takenPending } = useQuery(takenOpts)
   const claimPlayer = useMutation(api.assignedPlayers.claimPlayer)
+  const ensureTeamPlaceholder = useMutation(api.golf.ensureTeamPlaceholderScorecard)
 
   const takenSet = React.useMemo(
     () => new Set(takenPlayerIds ?? []),
@@ -105,6 +106,20 @@ function PlaySetupPage() {
     }
     const fallback = TEAM_LABELS[player.teamId] ?? 'Team'
     const name = teamDisplayName.trim() || fallback
+    try {
+      await ensureTeamPlaceholder({ teamId: player.teamId, teamName: name })
+    } catch (e: unknown) {
+      if (e instanceof ConvexError && typeof e.data === 'string') {
+        window.alert(e.data)
+        return
+      }
+      window.alert(
+        e instanceof Error
+          ? e.message
+          : 'Could not register your team on the leaderboard. Try again.',
+      )
+      return
+    }
     saveProfile({
       version: 1,
       role: 'player',
@@ -245,13 +260,33 @@ function TeamConfirmCard({
 }) {
   const teammates = teammatesForPlayer(playerId)
   const player = PLAYERS.find((p) => p.id === playerId)
+  const teamIdForQuery = player?.teamId ?? ''
   const label = player ? TEAM_LABELS[player.teamId] ?? 'Team' : 'Team'
-  const [teamNameInput, setTeamNameInput] = React.useState(label)
+
+  const serverTeamNameOpts = convexQuery(api.golf.teamDisplayNameOnServer, {
+    teamId: teamIdForQuery || '__unset__',
+  })
+  const { data: serverTeamNameRaw, isFetched: serverNameFetched } = useQuery({
+    ...serverTeamNameOpts,
+    enabled: teamIdForQuery.length > 0,
+  })
+
+  const serverSuggestedName =
+    serverNameFetched &&
+    typeof serverTeamNameRaw === 'string' &&
+    serverTeamNameRaw.length > 0
+      ? serverTeamNameRaw
+      : undefined
+
+  const defaultTeamName = serverSuggestedName ?? label
+  const [teamNameInput, setTeamNameInput] = React.useState(defaultTeamName)
   const [confirming, setConfirming] = React.useState(false)
 
   React.useEffect(() => {
-    setTeamNameInput(TEAM_LABELS[player?.teamId ?? ''] ?? 'Team')
-  }, [playerId, player?.teamId])
+    setTeamNameInput(defaultTeamName)
+  }, [playerId, defaultTeamName])
+
+  const hintBaseline = serverSuggestedName ?? label
 
   return (
     <Card className="shadow-sm">
@@ -273,8 +308,8 @@ function TeamConfirmCard({
             autoComplete="off"
           />
           <p className="text-xs text-muted-foreground">
-            Defaults to {label}. Change it if your group uses another name on
-            the leaderboard.
+            Defaults to {hintBaseline}. Change it if your group uses another name
+            on the leaderboard.
           </p>
         </div>
         <ul className="space-y-2 rounded-xl border bg-card px-3 py-3 text-sm">
