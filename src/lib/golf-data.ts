@@ -84,27 +84,27 @@ export const TEAM_LABELS: Record<string, string> = {
 }
 
 export const PLAYERS: Array<PlayerRecord> = [
-  { id: 'p9', name: 'Andrea Phillips', teamId: 't1' },
-  { id: 'p3', name: 'Hannah Ker', teamId: 't1' },
-  { id: 'p1', name: 'Jason Borseth', teamId: 't1' },
-  { id: 'p17', name: 'Lexi Borseth', teamId: 't1' },
+  { id: 'p6', name: 'Max', teamId: 't1' },
+  { id: 'p5', name: 'Kathi', teamId: 't1' },
+  { id: 'p7', name: 'Jones', teamId: 't1' },
 
-  { id: 'p7', name: 'Jonah Borseth', teamId: 't2' },
-  { id: 'p5', name: 'Kathi Mcintosh', teamId: 't2' },
-  { id: 'p6', name: 'Max Borseth', teamId: 't2' },
+  { id: 'p1', name: 'Jason', teamId: 't2' },
+  { id: 'p14', name: 'Josh D', teamId: 't2' },
+  { id: 'p17', name: 'Lexi', teamId: 't2' },
 
-  { id: 'p11', name: 'Emily Phillips', teamId: 't3' },
-  { id: 'p2', name: 'Jasmine Mancuso', teamId: 't3' },
-  { id: 'p8', name: 'Jed Borseth', teamId: 't3' },
-  { id: 'p10', name: 'Mary-Liz Borseth', teamId: 't3' },
+  { id: 'p8', name: 'Jed', teamId: 't3' },
+  { id: 'p10', name: 'Mary-Liz', teamId: 't3' },
+  { id: 'p2', name: 'Jasmine', teamId: 't3' },
+  { id: 'p11', name: 'Emily', teamId: 't3' },
 
-  { id: 'p13', name: 'Josh Borseth', teamId: 't4' },
-  { id: 'p14', name: 'Josh Dyck', teamId: 't4' },
-  { id: 'p12', name: 'Lily Borseth', teamId: 't4' },
+  { id: 'p13', name: 'Josh B', teamId: 't4' },
+  { id: 'p12', name: 'Lily', teamId: 't4' },
+  { id: 'p4', name: 'Blake', teamId: 't4' },
 
-  { id: 'p4', name: 'Blake Mcintosh', teamId: 't5' },
-  { id: 'p15', name: 'Mike Borseth', teamId: 't5' },
-  { id: 'p16', name: 'Mike Phillips', teamId: 't5' },
+  { id: 'p15', name: 'Mike B', teamId: 't5' },
+  { id: 'p16', name: 'Mike P', teamId: 't5' },
+  { id: 'p3', name: 'Hannah', teamId: 't5' },
+  { id: 'p9', name: 'Andrea', teamId: 't5' },
 ]
 
 export function teammatesForPlayer(playerId: string): Array<PlayerRecord> {
@@ -124,13 +124,13 @@ export function playerNameById(playerId: string): string | undefined {
   return PLAYERS.find((p) => p.id === playerId)?.name
 }
 
-/** Comma-separated first names from stable team id (works with custom display team names). */
+/** Comma-separated roster labels from stable team id (works with custom display team names). */
 export function firstNamesLineForTeamId(
   teamId: string | null | undefined,
 ): string {
   if (!teamId || !TEAM_LABELS[teamId]) return ''
   return PLAYERS.filter((p) => p.teamId === teamId)
-    .map((p) => p.name.split(/\s+/)[0] ?? p.name)
+    .map((p) => p.name)
     .join(', ')
 }
 

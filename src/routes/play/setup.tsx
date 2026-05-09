@@ -1,7 +1,12 @@
+import { convexQuery } from '@convex-dev/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
+import { ConvexError } from 'convex/values'
+import { useMutation } from 'convex/react'
 import * as React from 'react'
 import { ArrowLeftIcon } from 'lucide-react'
 
+import { api } from '../../../convex/_generated/api'
 import { PlayerCombobox } from '~/components/player-combobox'
 import { Button, buttonVariants } from '~/components/ui/button'
 import {
@@ -34,6 +39,30 @@ function PlaySetupPage() {
   const [step, setStep] = React.useState<Step>('role')
   const [playerId, setPlayerId] = React.useState<string | null>(null)
 
+  const takenOpts = convexQuery(api.assignedPlayers.listTakenPlayerIds, {})
+  const { data: takenPlayerIds, isPending: takenPending } = useQuery(takenOpts)
+  const claimPlayer = useMutation(api.assignedPlayers.claimPlayer)
+
+  const takenSet = React.useMemo(
+    () => new Set(takenPlayerIds ?? []),
+    [takenPlayerIds],
+  )
+  const availablePlayers = React.useMemo(
+    () => PLAYERS.filter((p) => !takenSet.has(p.id)),
+    [takenSet],
+  )
+  const comboboxPlayers = React.useMemo(
+    () => availablePlayers.map((p) => ({ id: p.id, name: p.name })),
+    [availablePlayers],
+  )
+
+  React.useEffect(() => {
+    if (step !== 'name') return
+    if (playerId === null) return
+    if (!takenSet.has(playerId)) return
+    setPlayerId(null)
+  }, [step, playerId, takenSet])
+
   React.useEffect(() => {
     const existing = loadProfile()
     if (existing?.onboardingComplete) {
@@ -56,9 +85,24 @@ function PlaySetupPage() {
     void navigate({ to: '/leaderboard' })
   }
 
-  function finishPlayer(selectedId: string, teamDisplayName: string) {
+  async function finishPlayer(
+    selectedId: string,
+    teamDisplayName: string,
+  ): Promise<void> {
     const player = PLAYERS.find((p) => p.id === selectedId)
     if (!player) return
+    try {
+      await claimPlayer({ playerId: selectedId })
+    } catch (e: unknown) {
+      if (e instanceof ConvexError && typeof e.data === 'string') {
+        window.alert(e.data)
+        return
+      }
+      window.alert(
+        e instanceof Error ? e.message : 'Could not save your player pick.',
+      )
+      return
+    }
     const fallback = TEAM_LABELS[player.teamId] ?? 'Team'
     const name = teamDisplayName.trim() || fallback
     saveProfile({
@@ -137,15 +181,26 @@ function PlaySetupPage() {
           <CardHeader>
             <CardTitle className="text-lg">Who are you?</CardTitle>
             <CardDescription>
-              Search the roster — swap names later without touching Convex.
+              Search the roster — names already picked on another phone are
+              hidden.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <PlayerCombobox
-              players={PLAYERS.map((p) => ({ id: p.id, name: p.name }))}
-              valueId={playerId}
-              onSelect={setPlayerId}
-            />
+            {takenPending ? (
+              <p className="text-sm text-muted-foreground">Loading roster…</p>
+            ) : comboboxPlayers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Everyone on the roster is already assigned on another device.
+                Ask a teammate to clear their device from Admin if this is a
+                mistake.
+              </p>
+            ) : (
+              <PlayerCombobox
+                players={comboboxPlayers}
+                valueId={playerId}
+                onSelect={setPlayerId}
+              />
+            )}
           </CardContent>
           <CardFooter className="flex gap-2">
             <Button
@@ -157,7 +212,9 @@ function PlaySetupPage() {
             </Button>
             <Button
               className="flex-1 rounded-xl"
-              disabled={!playerId}
+              disabled={
+                !playerId || takenPending || comboboxPlayers.length === 0
+              }
               onClick={() => setStep('team')}
             >
               Continue
@@ -184,12 +241,13 @@ function TeamConfirmCard({
 }: {
   playerId: string
   onBack: () => void
-  onConfirm: (teamDisplayName: string) => void
+  onConfirm: (teamDisplayName: string) => Promise<void>
 }) {
   const teammates = teammatesForPlayer(playerId)
   const player = PLAYERS.find((p) => p.id === playerId)
   const label = player ? TEAM_LABELS[player.teamId] ?? 'Team' : 'Team'
   const [teamNameInput, setTeamNameInput] = React.useState(label)
+  const [confirming, setConfirming] = React.useState(false)
 
   React.useEffect(() => {
     setTeamNameInput(TEAM_LABELS[player?.teamId ?? ''] ?? 'Team')
@@ -233,14 +291,29 @@ function TeamConfirmCard({
         </ul>
       </CardContent>
       <CardFooter className="flex flex-col gap-2 sm:flex-row">
-        <Button variant="ghost" className="flex-1 rounded-xl" onClick={onBack}>
+        <Button
+          variant="ghost"
+          className="flex-1 rounded-xl"
+          onClick={onBack}
+          disabled={confirming}
+        >
           No, pick another name
         </Button>
         <Button
           className="flex-1 rounded-xl"
-          onClick={() => onConfirm(teamNameInput)}
+          disabled={confirming}
+          onClick={() => {
+            setConfirming(true)
+            void (async () => {
+              try {
+                await onConfirm(teamNameInput)
+              } finally {
+                setConfirming(false)
+              }
+            })()
+          }}
         >
-          Yes, that&apos;s my team
+          {confirming ? 'Saving…' : "Yes, that's my team"}
         </Button>
       </CardFooter>
     </Card>

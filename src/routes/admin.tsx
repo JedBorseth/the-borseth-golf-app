@@ -8,6 +8,7 @@ import * as React from 'react'
 
 import { api } from '../../convex/_generated/api'
 import { ADMIN_OTP_CODE } from '~/lib/admin-otp'
+import { loadProfile } from '~/lib/device-profile'
 import { clearAllAppLocalStorage } from '~/lib/device-storage-clear'
 import { TEAM_LABELS } from '~/lib/golf-data'
 import { relativeToParShortLabel } from '~/lib/hole-score-indicator'
@@ -72,6 +73,7 @@ function AdminPage() {
 
   const adminResetAll = useMutation(api.admin.adminResetAllHoleScores)
   const adminResetTeam = useMutation(api.admin.adminResetTeamHoleScores)
+  const releasePlayer = useMutation(api.assignedPlayers.releasePlayer)
 
   const [inlineError, setInlineError] = React.useState<string | null>(null)
   const [pendingAction, setPendingAction] = React.useState<
@@ -115,11 +117,18 @@ function AdminPage() {
     }
   }
 
-  function wipeThisDevice() {
+  async function wipeThisDevice() {
+    setInlineError(null)
     setPendingAction('device')
     try {
+      const p = loadProfile()
+      if (p?.playerId) {
+        await releasePlayer({ playerId: p.playerId })
+      }
       clearAllAppLocalStorage()
       void navigate({ to: '/' })
+    } catch (e: unknown) {
+      setInlineError(convexErrMessage(e))
     } finally {
       setPendingAction(null)
     }
