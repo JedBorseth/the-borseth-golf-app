@@ -12,4 +12,8 @@ export default defineSchema({
     /** Player id (e.g. p1) whose drive was the team tee ball for this hole. */
     teePlayerId: v.optional(v.string()),
   }).index('by_team_hole', ['teamName', 'hole']),
+
+  assignedPlayers: defineTable({
+    playerId: v.string(),
+  }).index('by_player_id', ['playerId']),
 })

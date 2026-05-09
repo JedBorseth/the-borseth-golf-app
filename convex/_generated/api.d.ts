@@ -9,6 +9,7 @@
  */
 
 import type * as admin from "../admin.js";
+import type * as assignedPlayers from "../assignedPlayers.js";
 import type * as golf from "../golf.js";
 import type * as golfRoster from "../golfRoster.js";
 import type * as syncTeamHoleScores from "../syncTeamHoleScores.js";
@@ -21,6 +22,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
+  assignedPlayers: typeof assignedPlayers;
   golf: typeof golf;
   golfRoster: typeof golfRoster;
   syncTeamHoleScores: typeof syncTeamHoleScores;
