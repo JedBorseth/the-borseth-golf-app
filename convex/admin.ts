@@ -39,6 +39,28 @@ export const adminResetAllHoleScores = mutation({
   },
 })
 
+const LOBBY_ROOM_GLOBAL = 'global' as const
+
+export const adminClearLobbyChat = mutation({
+  args: { pin: v.string() },
+  handler: async (ctx, args) => {
+    assertAdminPin(args.pin)
+    for (;;) {
+      const batch = await ctx.db
+        .query('lobbyChatMessages')
+        .withIndex('by_room_and_sentAt', (q) =>
+          q.eq('room', LOBBY_ROOM_GLOBAL),
+        )
+        .take(400)
+      if (batch.length === 0) break
+      for (const row of batch) {
+        await ctx.db.delete('lobbyChatMessages', row._id)
+      }
+    }
+    return null
+  },
+})
+
 export const adminReleaseAssignedPlayer = mutation({
   args: { pin: v.string(), playerId: v.string() },
   handler: async (ctx, args) => {

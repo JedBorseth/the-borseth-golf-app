@@ -102,6 +102,7 @@ function AdminPage() {
   const adminReleaseAssignedPlayer = useMutation(
     api.admin.adminReleaseAssignedPlayer,
   )
+  const adminClearLobbyChat = useMutation(api.admin.adminClearLobbyChat)
   const releasePlayer = useMutation(api.assignedPlayers.releasePlayer)
 
   const [inlineError, setInlineError] = React.useState<string | null>(null)
@@ -118,6 +119,8 @@ function AdminPage() {
   >(null)
   const [showReleaseAssignDialog, setShowReleaseAssignDialog] =
     React.useState(false)
+  const [showClearChatDialog, setShowClearChatDialog] = React.useState(false)
+  const [pendingClearChat, setPendingClearChat] = React.useState(false)
 
   const takenPlayerIds = React.useMemo(
     () => sortAssignedPlayerIds(takenPlayerIdsRaw ?? []),
@@ -137,7 +140,8 @@ function AdminPage() {
   const anyBusy =
     pendingAction !== null ||
     pendingTeamId !== null ||
-    pendingReleaseAssignId !== null
+    pendingReleaseAssignId !== null ||
+    pendingClearChat
 
   async function wipeAllServer() {
     const pinVal = adminPin
@@ -198,6 +202,21 @@ function AdminPage() {
       setInlineError(convexErrMessage(e))
     } finally {
       setPendingAction(null)
+    }
+  }
+
+  async function clearLobbyChatServer() {
+    const pinVal = adminPin
+    if (!pinVal) return
+    setInlineError(null)
+    setPendingClearChat(true)
+    try {
+      await adminClearLobbyChat({ pin: pinVal })
+      setShowClearChatDialog(false)
+    } catch (e: unknown) {
+      setInlineError(convexErrMessage(e))
+    } finally {
+      setPendingClearChat(false)
     }
   }
 
@@ -296,11 +315,45 @@ function AdminPage() {
             <Button
               type="button"
               variant="destructive"
-              disabled={pendingAction !== null || pendingTeamId !== null}
+              disabled={
+                pendingAction !== null ||
+                pendingTeamId !== null ||
+                pendingClearChat
+              }
               className="w-full rounded-xl sm:w-auto"
               onClick={() => void wipeAllServer()}
             >
               {pendingAction === 'all' ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showClearChatDialog} onOpenChange={setShowClearChatDialog}>
+        <DialogContent className="max-w-[min(calc(100vw-2rem),22rem)]">
+          <DialogHeader>
+            <DialogTitle>Clear play chat?</DialogTitle>
+            <DialogDescription>
+              This removes every message in the shared Play tab chat on the
+              server for all devices.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <DialogClose render={<Button variant="outline" type="button" />}>
+              Cancel
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={
+                pendingAction !== null ||
+                pendingTeamId !== null ||
+                pendingClearChat
+              }
+              className="w-full rounded-xl sm:w-auto"
+              onClick={() => void clearLobbyChatServer()}
+            >
+              {pendingClearChat ? 'Clearing…' : 'Clear chat'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -522,11 +575,11 @@ function AdminPage() {
         </CardContent>
       </Card>
 
-      <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+      <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Button
           variant="destructive"
           type="button"
-          className="rounded-xl sm:flex-1"
+          className="rounded-xl sm:min-w-0 sm:flex-1"
           disabled={anyBusy}
           onClick={() => setShowDangerDialog(true)}
         >
@@ -535,7 +588,16 @@ function AdminPage() {
         <Button
           variant="destructive"
           type="button"
-          className="rounded-xl sm:flex-1"
+          className="rounded-xl sm:min-w-0 sm:flex-1"
+          disabled={anyBusy}
+          onClick={() => setShowClearChatDialog(true)}
+        >
+          Clear play chat (server)
+        </Button>
+        <Button
+          variant="destructive"
+          type="button"
+          className="rounded-xl sm:min-w-0 sm:flex-1"
           disabled={anyBusy}
           onClick={() => wipeThisDevice()}
         >

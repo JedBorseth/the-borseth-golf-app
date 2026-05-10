@@ -16,4 +16,13 @@ export default defineSchema({
   assignedPlayers: defineTable({
     playerId: v.string(),
   }).index('by_player_id', ['playerId']),
+
+  /** One global room for competitors on the Play tab (filtered by Convex query bounds). */
+  lobbyChatMessages: defineTable({
+    room: v.literal('global'),
+    playerId: v.string(),
+    playerName: v.string(),
+    body: v.string(),
+    sentAt: v.number(),
+  }).index('by_room_and_sentAt', ['room', 'sentAt']),
 })
