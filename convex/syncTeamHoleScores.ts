@@ -2,6 +2,10 @@ import { ConvexError } from 'convex/values'
 
 import { rosterPlayerIdsForTeamId } from './golfRoster'
 import type { MutationCtx } from './_generated/server'
+import {
+  canonicalTeamDisplayNameForTeamId,
+  unifyHoleScoreDocsToTeamDisplayName,
+} from './teamHoleScoreCanon'
 
 export type HoleScoreRow = {
   hole: number
@@ -41,18 +45,20 @@ export async function replaceFullTeamHoleScores(
     }
   }
 
-  const existing = await ctx.db
-    .query('teamHoleScores')
-    .withIndex('by_team_hole', (q) => q.eq('teamName', args.teamName))
-    .collect()
-
-  for (const row of existing) {
+  const allRowsBefore = await ctx.db.query('teamHoleScores').collect()
+  const rowsToRemove = allRowsBefore.filter((r) => {
+    const matchesTeamId = r.teamId === args.teamId
+    const legacyCanonical =
+      !r.teamId && r.teamName === args.teamName.trim()
+    return matchesTeamId || legacyCanonical
+  })
+  for (const row of rowsToRemove) {
     await ctx.db.delete('teamHoleScores', row._id)
   }
 
   for (const h of uniqueHoles) {
     await ctx.db.insert('teamHoleScores', {
-      teamName: args.teamName,
+      teamName: args.teamName.trim(),
       teamId: args.teamId,
       hole: h.hole,
       strokes: h.strokes,
@@ -93,24 +99,41 @@ export async function upsertTeamHoleScores(
     }
   }
 
+  const trimmedClient = args.teamName.trim()
+
   for (const h of uniqueHoles) {
-    const existing = await ctx.db
-      .query('teamHoleScores')
-      .withIndex('by_team_hole', (q) =>
-        q.eq('teamName', args.teamName).eq('hole', h.hole),
-      )
-      .unique()
+    let rowsSnap = await ctx.db.query('teamHoleScores').collect()
+    const canonicalName =
+      canonicalTeamDisplayNameForTeamId(args.teamId, rowsSnap) ??
+      trimmedClient
+
+    let sameHole = rowsSnap.filter(
+      (r) => r.teamId === args.teamId && r.hole === h.hole,
+    )
+    sameHole.sort((a, b) => (a._id < b._id ? -1 : 1))
+
+    while (sameHole.length > 1) {
+      const dup = sameHole[sameHole.length - 1]
+      if (!dup) break
+      await ctx.db.delete('teamHoleScores', dup._id)
+      rowsSnap = rowsSnap.filter((r) => r._id !== dup._id)
+      sameHole = sameHole.slice(0, -1)
+    }
+
+    const existing = rowsSnap.find(
+      (r) => r.teamId === args.teamId && r.hole === h.hole,
+    )
 
     if (existing) {
       await ctx.db.patch('teamHoleScores', existing._id, {
-        teamName: args.teamName,
+        teamName: canonicalName,
         teamId: args.teamId,
         strokes: h.strokes,
         teePlayerId: h.teePlayerId,
       })
     } else {
       await ctx.db.insert('teamHoleScores', {
-        teamName: args.teamName,
+        teamName: canonicalName,
         teamId: args.teamId,
         hole: h.hole,
         strokes: h.strokes,
@@ -118,4 +141,15 @@ export async function upsertTeamHoleScores(
       })
     }
   }
+
+  let finalRows = await ctx.db.query('teamHoleScores').collect()
+  const finalCanon =
+    canonicalTeamDisplayNameForTeamId(args.teamId, finalRows) ??
+    trimmedClient
+  await unifyHoleScoreDocsToTeamDisplayName(
+    ctx,
+    finalRows,
+    args.teamId,
+    finalCanon,
+  )
 }

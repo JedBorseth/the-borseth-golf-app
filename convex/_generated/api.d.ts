@@ -13,6 +13,7 @@ import type * as assignedPlayers from "../assignedPlayers.js";
 import type * as golf from "../golf.js";
 import type * as golfRoster from "../golfRoster.js";
 import type * as syncTeamHoleScores from "../syncTeamHoleScores.js";
+import type * as teamHoleScoreCanon from "../teamHoleScoreCanon.js";
 
 import type {
   ApiFromModules,
@@ -26,6 +27,7 @@ declare const fullApi: ApiFromModules<{
   golf: typeof golf;
   golfRoster: typeof golfRoster;
   syncTeamHoleScores: typeof syncTeamHoleScores;
+  teamHoleScoreCanon: typeof teamHoleScoreCanon;
 }>;
 
 /**

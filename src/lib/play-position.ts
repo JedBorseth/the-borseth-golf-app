@@ -47,6 +47,15 @@ export function clearLastHoleForTeam(teamName: string) {
   writeAll(all)
 }
 
+export function migrateLastHoleTeamNameKey(fromKey: string, toKey: string) {
+  if (typeof localStorage === 'undefined') return
+  if (!fromKey || !toKey || fromKey === toKey) return
+  const hole = loadLastHoleForTeam(fromKey)
+  if (hole === null) return
+  saveLastHoleForTeam(toKey, hole)
+  clearLastHoleForTeam(fromKey)
+}
+
 export function clearAllLastHolePositions() {
   if (typeof localStorage === 'undefined') return
   localStorage.removeItem(STORAGE_KEY)

@@ -35,7 +35,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '~/components/ui/sheet'
-import { loadProfile } from '~/lib/device-profile'
+import { loadProfile, saveProfile } from '~/lib/device-profile'
 import {
   COURSE_NAME,
   HOLE_META,
@@ -59,6 +59,7 @@ import {
   holesPayloadFromScorecard,
   loadLocalScorecard,
   mergeScorecardsByCompleteness,
+  migrateLocalScorecardTeamNameKey,
   saveLocalScorecard,
   scorecardsHoleDataEqual,
 } from '~/lib/local-scores'
@@ -66,6 +67,7 @@ import { isOfflineOrNetworkError } from '~/lib/network-error'
 import {
   clearLastHoleForTeam,
   loadLastHoleForTeam,
+  migrateLastHoleTeamNameKey,
   saveLastHoleForTeam,
 } from '~/lib/play-position'
 import { cn } from '~/lib/utils'
@@ -129,7 +131,52 @@ function PlayGolfPage() {
 
   const teamName = profile?.teamName ?? ''
 
+  const canonNameQuery = useQuery({
+    ...convexQuery(api.golf.teamDisplayNameOnServer, {
+      teamId: profile?.teamId ?? '__unset__',
+    }),
+    enabled: hydrated && !!profile?.teamId,
+    gcTime: 1000 * 60 * 60 * 24,
+  })
+
   const skipNextHolePersist = React.useRef(true)
+
+  React.useEffect(() => {
+    if (!(hydrated && profile?.teamId && profile.teamName)) return
+    if (!canonNameQuery.isFetched) return
+    const serverCanon = canonNameQuery.data
+    if (typeof serverCanon !== 'string' || !serverCanon) return
+
+    const prior = profile.teamName
+    if (prior === serverCanon) return
+
+    migrateLocalScorecardTeamNameKey(prior, serverCanon, profile.teamId)
+    migrateLastHoleTeamNameKey(prior, serverCanon)
+    const nextProf: DeviceProfile = { ...profile, teamName: serverCanon }
+    saveProfile(nextProf)
+    setProfile(nextProf)
+
+    skipNextHolePersist.current = true
+    const savedHole = loadLastHoleForTeam(serverCanon)
+    setCurrentHole(savedHole ?? 1)
+
+    void queryClient.invalidateQueries({
+      queryKey: convexQuery(api.golf.scoresForTeam, { teamName: prior }).queryKey,
+    })
+    void queryClient.invalidateQueries({
+      queryKey: convexQuery(api.golf.scoresForTeam, {
+        teamName: serverCanon,
+      }).queryKey,
+    })
+
+    setLocalSyncVersion((v) => v + 1)
+  }, [
+    hydrated,
+    profile,
+    canonNameQuery.isFetched,
+    canonNameQuery.data,
+    queryClient,
+  ])
 
   React.useEffect(() => {
     if (!hydrated || !teamName) return

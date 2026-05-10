@@ -53,6 +53,56 @@ export function saveLocalScorecard(card: LocalScorecard) {
   writeAll(all)
 }
 
+/**
+ * Moves the device's scorecard from an old leaderboard key (team name string) to
+ * the canonical server name without losing strokes.
+ */
+export function migrateLocalScorecardTeamNameKey(
+  fromKey: string,
+  toKey: string,
+  teamId: string,
+): void {
+  if (typeof localStorage === 'undefined') return
+  const prev = fromKey ? loadLocalScorecard(fromKey) : null
+  const dest = loadLocalScorecard(toKey)
+
+  const trustedPrev =
+    prev && prev.teamId === teamId ? prev : null
+  const trustedDest =
+    dest && dest.teamId === teamId ? dest : null
+
+  if (!trustedPrev && !trustedDest) return
+
+  const leftHoleMaps: ScorecardHoleMaps =
+    trustedPrev !== null
+      ? {
+          strokes: trustedPrev.strokes,
+          teePlayerIdByHole: trustedPrev.teePlayerIdByHole,
+        }
+      : { strokes: {}, teePlayerIdByHole: {} }
+
+  const rightHoleMaps: ScorecardHoleMaps =
+    trustedDest !== null
+      ? {
+          strokes: trustedDest.strokes,
+          teePlayerIdByHole: trustedDest.teePlayerIdByHole,
+        }
+      : { strokes: {}, teePlayerIdByHole: {} }
+
+  const merged = mergeScorecardsByCompleteness(leftHoleMaps, rightHoleMaps)
+
+  saveLocalScorecard({
+    teamName: toKey,
+    teamId,
+    strokes: merged.strokes,
+    teePlayerIdByHole: merged.teePlayerIdByHole,
+  })
+
+  if (fromKey !== toKey && fromKey) {
+    clearLocalScorecard(fromKey)
+  }
+}
+
 export function clearLocalScorecard(teamName: string) {
   const all = readAll()
   delete all[teamName]

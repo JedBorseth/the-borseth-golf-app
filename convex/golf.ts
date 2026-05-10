@@ -1,25 +1,22 @@
 import { ConvexError, v } from 'convex/values'
 import { parForHole } from '../src/lib/golf-data'
+import type { Id } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import { rosterPlayerIdsForTeamId } from './golfRoster'
 import { upsertTeamHoleScores } from './syncTeamHoleScores'
+import {
+  canonicalTeamDisplayNameForTeamId,
+  SETUP_PLACEHOLDER_HOLE,
+  unifyHoleScoreDocsToTeamDisplayName,
+} from './teamHoleScoreCanon'
 
-/** Placeholder hole so first teammate can register {@link teamName} before any strokes (see {@link ensureTeamPlaceholderScorecard}). */
-export const SETUP_PLACEHOLDER_HOLE = 0
+export { SETUP_PLACEHOLDER_HOLE } from './teamHoleScoreCanon'
 
 export const teamDisplayNameOnServer = query({
   args: { teamId: v.string() },
   handler: async (ctx, args) => {
     const rows = await ctx.db.query('teamHoleScores').collect()
-    let found: string | null = null
-    for (const row of rows) {
-      if (row.teamId !== args.teamId) continue
-      if (row.hole === SETUP_PLACEHOLDER_HOLE) {
-        return row.teamName
-      }
-      if (found === null) found = row.teamName
-    }
-    return found
+    return canonicalTeamDisplayNameForTeamId(args.teamId, rows)
   },
 })
 
@@ -148,30 +145,60 @@ export const submitHoleScore = mutation({
       throw new ConvexError('Tee player not on this team')
     }
 
-    const existing = await ctx.db
-      .query('teamHoleScores')
-      .withIndex('by_team_hole', (q) =>
-        q.eq('teamName', args.teamName).eq('hole', args.hole),
-      )
-      .unique()
+    let rowsSnap = await ctx.db.query('teamHoleScores').collect()
+    const clientName = args.teamName.trim()
+    const canonicalName =
+      canonicalTeamDisplayNameForTeamId(args.teamId, rowsSnap) ?? clientName
+
+    let sameHole = rowsSnap.filter(
+      (r) => r.teamId === args.teamId && r.hole === args.hole,
+    )
+    sameHole.sort((a, b) => (a._id < b._id ? -1 : 1))
+
+    while (sameHole.length > 1) {
+      const dup = sameHole[sameHole.length - 1]
+      if (!dup) break
+      await ctx.db.delete('teamHoleScores', dup._id)
+      rowsSnap = rowsSnap.filter((r) => r._id !== dup._id)
+      sameHole = sameHole.slice(0, -1)
+    }
+
+    const existing = rowsSnap.find(
+      (r) => r.teamId === args.teamId && r.hole === args.hole,
+    )
+
+    let resultId: Id<'teamHoleScores'>
 
     if (existing) {
       await ctx.db.patch('teamHoleScores', existing._id, {
-        teamName: args.teamName,
+        teamName: canonicalName,
         teamId: args.teamId,
         strokes: args.strokes,
         teePlayerId: args.teePlayerId,
       })
-      return existing._id
+      resultId = existing._id
+    } else {
+      resultId = await ctx.db.insert('teamHoleScores', {
+        teamName: canonicalName,
+        teamId: args.teamId,
+        hole: args.hole,
+        strokes: args.strokes,
+        teePlayerId: args.teePlayerId,
+      })
     }
 
-    return await ctx.db.insert('teamHoleScores', {
-      teamName: args.teamName,
-      teamId: args.teamId,
-      hole: args.hole,
-      strokes: args.strokes,
-      teePlayerId: args.teePlayerId,
-    })
+    rowsSnap = await ctx.db.query('teamHoleScores').collect()
+    const finalCanon =
+      canonicalTeamDisplayNameForTeamId(args.teamId, rowsSnap) ??
+      canonicalName
+    await unifyHoleScoreDocsToTeamDisplayName(
+      ctx,
+      rowsSnap,
+      args.teamId,
+      finalCanon,
+    )
+
+    return resultId
   },
 })
 
