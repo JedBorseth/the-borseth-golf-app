@@ -1,6 +1,8 @@
 import { ConvexError, v } from 'convex/values'
 import { PLAYERS } from '../src/lib/golf-data'
+import { TEAM_LABELS } from './golfRoster'
 import { mutation, query } from './_generated/server'
+import { canonicalTeamDisplayNameForTeamId } from './teamHoleScoreCanon'
 
 const GLOBAL_ROOM = 'global' as const
 const MAX_BODY_LEN = 500
@@ -22,6 +24,7 @@ export const recent = query({
       id: r._id,
       playerId: r.playerId,
       playerName: r.playerName,
+      teamDisplayName: r.teamDisplayName,
       body: r.body,
       sentAt: r.sentAt,
     }))
@@ -59,10 +62,17 @@ export const send = mutation({
       throw new ConvexError(`Keep messages under ${MAX_BODY_LEN} characters.`)
     }
 
+    const scoreRows = await ctx.db.query('teamHoleScores').collect()
+    const teamDisplayName =
+      canonicalTeamDisplayNameForTeamId(player.teamId, scoreRows) ??
+      TEAM_LABELS[player.teamId] ??
+      player.teamId
+
     await ctx.db.insert('lobbyChatMessages', {
       room: GLOBAL_ROOM,
       playerId: player.id,
       playerName: player.name,
+      teamDisplayName,
       body,
       sentAt: Date.now(),
     })

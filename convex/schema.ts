@@ -22,6 +22,8 @@ export default defineSchema({
     room: v.literal('global'),
     playerId: v.string(),
     playerName: v.string(),
+    /** Server-resolved team display name at send time (custom name from scoreboard). */
+    teamDisplayName: v.optional(v.string()),
     body: v.string(),
     sentAt: v.number(),
   }).index('by_room_and_sentAt', ['room', 'sentAt']),

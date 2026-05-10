@@ -106,8 +106,13 @@ function PlaySetupPage() {
     }
     const fallback = TEAM_LABELS[player.teamId] ?? 'Team'
     const name = teamDisplayName.trim() || fallback
+    let serverTeamDisplayName: string
     try {
-      await ensureTeamPlaceholder({ teamId: player.teamId, teamName: name })
+      const ensured = await ensureTeamPlaceholder({
+        teamId: player.teamId,
+        teamName: name,
+      })
+      serverTeamDisplayName = ensured.teamDisplayName
     } catch (e: unknown) {
       if (e instanceof ConvexError && typeof e.data === 'string') {
         window.alert(e.data)
@@ -126,7 +131,7 @@ function PlaySetupPage() {
       playerId: player.id,
       playerName: player.name,
       teamId: player.teamId,
-      teamName: name,
+      teamName: serverTeamDisplayName,
       onboardingComplete: true,
     })
     void navigate({ to: '/play' })

@@ -36,19 +36,30 @@ export const ensureTeamPlaceholderScorecard = mutation({
       throw new ConvexError('Team name is required')
     }
 
-    const teamRows = (await ctx.db.query('teamHoleScores').collect()).filter(
-      (r) => r.teamId === args.teamId,
+    let allRows = await ctx.db.query('teamHoleScores').collect()
+    const teamRows = allRows.filter((r) => r.teamId === args.teamId)
+    const hasPlayableHole = teamRows.some(
+      (r) => r.hole >= 1 && r.hole <= 18,
     )
-    if (teamRows.length > 0) {
-      return
+
+    if (teamRows.length === 0) {
+      await ctx.db.insert('teamHoleScores', {
+        teamName: name,
+        teamId: args.teamId,
+        hole: SETUP_PLACEHOLDER_HOLE,
+        strokes: 0,
+      })
+    } else if (!hasPlayableHole) {
+      // Pre-round setup only: teammate devices may confirm with different names;
+      // adopt this confirmation so server canon and leaderboard stay coherent.
+      await unifyHoleScoreDocsToTeamDisplayName(ctx, allRows, args.teamId, name)
     }
 
-    await ctx.db.insert('teamHoleScores', {
-      teamName: name,
-      teamId: args.teamId,
-      hole: SETUP_PLACEHOLDER_HOLE,
-      strokes: 0,
-    })
+    allRows = await ctx.db.query('teamHoleScores').collect()
+    const finalCanon =
+      canonicalTeamDisplayNameForTeamId(args.teamId, allRows) ?? name
+
+    return { teamDisplayName: finalCanon }
   },
 })
 

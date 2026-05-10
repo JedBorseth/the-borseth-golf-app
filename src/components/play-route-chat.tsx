@@ -167,7 +167,8 @@ export function PlayRouteChat({ dockClassName }: PlayRouteChatProps = {}) {
                     (messages ?? []).map((m) => {
                       const mine =
                         eligible && m.playerId === profile?.playerId
-                      const teamLabel = teamLabelForPlayerId(m.playerId)
+                      const teamLabel =
+                        m.teamDisplayName ?? teamLabelForPlayerId(m.playerId)
                       return (
                         <div
                           key={m.id}
