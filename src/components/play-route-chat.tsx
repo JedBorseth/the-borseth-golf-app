@@ -165,8 +165,7 @@ export function PlayRouteChat({ dockClassName }: PlayRouteChatProps = {}) {
                     </p>
                   ) : (
                     (messages ?? []).map((m) => {
-                      const mine =
-                        eligible && m.playerId === profile?.playerId
+                      const mine = eligible && m.playerId === profile?.playerId
                       const teamLabel =
                         m.teamDisplayName ?? teamLabelForPlayerId(m.playerId)
                       return (
@@ -209,7 +208,7 @@ export function PlayRouteChat({ dockClassName }: PlayRouteChatProps = {}) {
 
           {eligible ? (
             <form
-              className="pointer-events-auto flex shrink-0 items-center gap-2 border-t pt-3"
+              className="pointer-events-auto flex shrink-0 items-center gap-2 border-t pt-3 pb-2"
               onSubmit={(ev) => {
                 ev.preventDefault()
                 void submit()
