@@ -10,7 +10,7 @@ import { api } from '../../convex/_generated/api'
 import { ADMIN_OTP_CODE } from '~/lib/admin-otp'
 import { loadProfile } from '~/lib/device-profile'
 import { clearAllAppLocalStorage } from '~/lib/device-storage-clear'
-import { TEAM_LABELS } from '~/lib/golf-data'
+import { PLAYERS, TEAM_LABELS, playerNameById } from '~/lib/golf-data'
 import { relativeToParShortLabel } from '~/lib/hole-score-indicator'
 import { cn } from '~/lib/utils'
 
@@ -31,7 +31,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '~/components/ui/dialog'
-import { InputOTP, InputOTPGroup, InputOTPSlot } from '~/components/ui/input-otp'
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from '~/components/ui/input-otp'
+import { Label } from '~/components/ui/label'
 
 export const Route = createFileRoute('/admin')({
   component: AdminPage,
@@ -40,6 +45,21 @@ export const Route = createFileRoute('/admin')({
 const TEAM_IDS = ['t1', 't2', 't3', 't4', 't5'] as const
 
 type TeamId = (typeof TEAM_IDS)[number]
+
+const PLAYER_ORDER = new Map(PLAYERS.map((p, i) => [p.id, i]))
+
+function sortAssignedPlayerIds(ids: Array<string>): Array<string> {
+  return [...ids].sort((a, b) => {
+    const ai = PLAYER_ORDER.get(a) ?? 999
+    const bi = PLAYER_ORDER.get(b) ?? 999
+    if (ai !== bi) return ai - bi
+    return a.localeCompare(b)
+  })
+}
+
+function labelForAssignedPlayerId(playerId: string): string {
+  return playerNameById(playerId) ?? playerId
+}
 
 function convexErrMessage(e: unknown): string {
   if (e instanceof ConvexError) {
@@ -71,8 +91,17 @@ function AdminPage() {
     enabled: !locked,
   })
 
+  const takenOpts = convexQuery(api.assignedPlayers.listTakenPlayerIds, {})
+  const { data: takenPlayerIdsRaw } = useQuery({
+    ...takenOpts,
+    enabled: !locked,
+  })
+
   const adminResetAll = useMutation(api.admin.adminResetAllHoleScores)
   const adminResetTeam = useMutation(api.admin.adminResetTeamHoleScores)
+  const adminReleaseAssignedPlayer = useMutation(
+    api.admin.adminReleaseAssignedPlayer,
+  )
   const releasePlayer = useMutation(api.assignedPlayers.releasePlayer)
 
   const [inlineError, setInlineError] = React.useState<string | null>(null)
@@ -80,12 +109,35 @@ function AdminPage() {
     null | 'all' | 'device'
   >(null)
   const [pendingTeamId, setPendingTeamId] = React.useState<TeamId | null>(null)
-  const [teamConfirmId, setTeamConfirmId] = React.useState<TeamId | null>(
-    null,
-  )
+  const [teamConfirmId, setTeamConfirmId] = React.useState<TeamId | null>(null)
   const [showDangerDialog, setShowDangerDialog] = React.useState(false)
+  const [releaseAssignPlayerId, setReleaseAssignPlayerId] =
+    React.useState<string>('')
+  const [pendingReleaseAssignId, setPendingReleaseAssignId] = React.useState<
+    string | null
+  >(null)
+  const [showReleaseAssignDialog, setShowReleaseAssignDialog] =
+    React.useState(false)
 
-  const anyBusy = pendingAction !== null || pendingTeamId !== null
+  const takenPlayerIds = React.useMemo(
+    () => sortAssignedPlayerIds(takenPlayerIdsRaw ?? []),
+    [takenPlayerIdsRaw],
+  )
+
+  React.useEffect(() => {
+    if (takenPlayerIds.length === 0) {
+      setReleaseAssignPlayerId('')
+      return
+    }
+    setReleaseAssignPlayerId((prev) =>
+      prev && takenPlayerIds.includes(prev) ? prev : takenPlayerIds[0],
+    )
+  }, [takenPlayerIds])
+
+  const anyBusy =
+    pendingAction !== null ||
+    pendingTeamId !== null ||
+    pendingReleaseAssignId !== null
 
   async function wipeAllServer() {
     const pinVal = adminPin
@@ -114,6 +166,21 @@ function AdminPage() {
       setInlineError(convexErrMessage(e))
     } finally {
       setPendingTeamId(null)
+    }
+  }
+
+  async function confirmReleaseServerAssignment(playerId: string) {
+    const pinVal = adminPin
+    if (!pinVal || !playerId) return
+    setInlineError(null)
+    setPendingReleaseAssignId(playerId)
+    try {
+      await adminReleaseAssignedPlayer({ pin: pinVal, playerId })
+      setShowReleaseAssignDialog(false)
+    } catch (e: unknown) {
+      setInlineError(convexErrMessage(e))
+    } finally {
+      setPendingReleaseAssignId(null)
     }
   }
 
@@ -218,8 +285,8 @@ function AdminPage() {
           <DialogHeader>
             <DialogTitle>Wipe leaderboard?</DialogTitle>
             <DialogDescription>
-              This deletes every hole score for every team on the server.
-              Phones keep their copies until something syncs again.
+              This deletes every hole score for every team on the server. Phones
+              keep their copies until something syncs again.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
@@ -240,6 +307,52 @@ function AdminPage() {
       </Dialog>
 
       <Dialog
+        open={showReleaseAssignDialog}
+        onOpenChange={setShowReleaseAssignDialog}
+      >
+        <DialogContent className="max-w-[min(calc(100vw-2rem),22rem)]">
+          <DialogHeader>
+            <DialogTitle>Remove server assignment?</DialogTitle>
+            <DialogDescription className="space-y-2">
+              <span className="block">
+                This clears only the server lock for{' '}
+                <span className="font-medium text-foreground">
+                  {releaseAssignPlayerId
+                    ? labelForAssignedPlayerId(releaseAssignPlayerId)
+                    : 'this player'}
+                </span>
+                . Their phone stays signed in as that player, but the name is
+                available again on the setup screen—another device can pick it,
+                or they can reclaim it.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <DialogClose render={<Button variant="outline" type="button" />}>
+              Cancel
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={
+                !releaseAssignPlayerId ||
+                pendingReleaseAssignId !== null ||
+                takenPlayerIds.length === 0
+              }
+              className="w-full rounded-xl sm:w-auto"
+              onClick={() =>
+                void confirmReleaseServerAssignment(releaseAssignPlayerId)
+              }
+            >
+              {pendingReleaseAssignId === releaseAssignPlayerId
+                ? 'Removing…'
+                : 'Remove assignment'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={teamConfirmId !== null}
         onOpenChange={(open) => {
           if (!open) setTeamConfirmId(null)
@@ -251,7 +364,8 @@ function AdminPage() {
               Reset {teamConfirmId ? TEAM_LABELS[teamConfirmId] : 'team'}?
             </DialogTitle>
             <DialogDescription>
-              This removes every hole logged for this team on the server. Other teams are unchanged.
+              This removes every hole logged for this team on the server. Other
+              teams are unchanged.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
@@ -277,8 +391,70 @@ function AdminPage() {
 
       <Card className="shadow-sm">
         <CardHeader>
+          <CardTitle className="text-lg">Player assignments (server)</CardTitle>
+          <CardDescription>
+            Names already claimed on a phone are hidden from setup for everyone
+            else. Clear a server assignment if someone needs to switch devices
+            or you need to free the name—phones stay logged in until they clear
+            the device or redo setup.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {takenPlayerIdsRaw === undefined ? (
+            <p className="text-sm text-muted-foreground">
+              Loading assignments…
+            </p>
+          ) : takenPlayerIds.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No server assignments right now. Everyone on the roster is free on
+              the setup screen.
+            </p>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="admin-release-assign">Assigned player</Label>
+                <select
+                  id="admin-release-assign"
+                  className={cn(
+                    'flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm',
+                    'ring-offset-background focus-visible:outline-none focus-visible:ring-2',
+                    'focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+                  )}
+                  value={releaseAssignPlayerId}
+                  disabled={anyBusy}
+                  onChange={(e) => setReleaseAssignPlayerId(e.target.value)}
+                >
+                  {takenPlayerIds.map((id) => (
+                    <option key={id} value={id}>
+                      {labelForAssignedPlayerId(id)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full rounded-xl"
+                disabled={
+                  anyBusy ||
+                  takenPlayerIds.length === 0 ||
+                  !releaseAssignPlayerId
+                }
+                onClick={() => setShowReleaseAssignDialog(true)}
+              >
+                Remove server assignment
+              </Button>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6 shadow-sm">
+        <CardHeader>
           <CardTitle className="text-lg">Teams</CardTitle>
-          <CardDescription>Server leaderboard snapshot — tap reset per team.</CardDescription>
+          <CardDescription>
+            Server leaderboard snapshot — tap reset per team.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <ul className="space-y-2">
@@ -322,7 +498,9 @@ function AdminPage() {
                   className="flex flex-row items-start justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium leading-snug">{TEAM_LABELS[id]}</p>
+                    <p className="font-medium leading-snug">
+                      {TEAM_LABELS[id]}
+                    </p>
                     <p className="text-xs leading-snug text-muted-foreground">
                       {statsUi}
                     </p>
