@@ -64,6 +64,7 @@ import {
   mergeScorecardsRealtime,
   migrateLocalScorecardTeamNameKey,
   reconcilePendingHoleSyncWithServer,
+  removePendingHoleSyncForHole,
   saveLocalScorecard,
   scorecardsHoleDataEqual,
 } from '~/lib/local-scores'
@@ -114,6 +115,7 @@ function PlayGolfPage() {
   const [localSyncVersion, setLocalSyncVersion] = React.useState(0)
   const [serverInSync, setServerInSync] = React.useState(true)
   const [finishingRound, setFinishingRound] = React.useState(false)
+  const [clearingHoleScore, setClearingHoleScore] = React.useState(false)
 
   const queryClient = useQueryClient()
 
@@ -285,6 +287,7 @@ function PlayGolfPage() {
   }, [teamName, profile?.teamId, serverTeeByHole, localSyncVersion])
 
   const syncFullScorecard = useMutation(api.golf.syncFullScorecard)
+  const clearHoleScoreMutation = useMutation(api.golf.clearHoleScore)
 
   const pushFullScorecardToConvex = React.useCallback(
     async (opts?: { silentConvexError?: boolean }) => {
@@ -602,6 +605,70 @@ function PlayGolfPage() {
     setScoreTargetHole(null)
   }
 
+  async function clearHoleScore() {
+    if (!profile?.teamName || !profile.teamId || scoreTargetHole === null)
+      return
+    const hole = scoreTargetHole
+    const holeKey = String(hole)
+
+    setClearingHoleScore(true)
+    try {
+      await clearHoleScoreMutation({
+        teamName: profile.teamName,
+        teamId: profile.teamId,
+        hole,
+      })
+    } catch (e: unknown) {
+      if (e instanceof ConvexError && typeof e.data === 'string') {
+        window.alert(e.data)
+      } else if (isOfflineOrNetworkError(e)) {
+        window.alert(
+          'Connect to the internet to clear this hole on the server, then try again.',
+        )
+      } else {
+        window.alert(
+          e instanceof Error ? e.message : 'Could not clear this hole.',
+        )
+      }
+      return
+    } finally {
+      setClearingHoleScore(false)
+    }
+
+    removePendingHoleSyncForHole(profile.teamName, hole)
+
+    const prev =
+      loadLocalScorecard(profile.teamName) ?? {
+        teamName: profile.teamName,
+        teamId: profile.teamId,
+        strokes: {},
+        teePlayerIdByHole: {},
+      }
+    const strokesNext = { ...prev.strokes }
+    const teeNext = { ...prev.teePlayerIdByHole }
+    delete strokesNext[holeKey]
+    delete teeNext[holeKey]
+
+    saveLocalScorecard({
+      ...prev,
+      strokes: strokesNext,
+      teePlayerIdByHole: teeNext,
+    })
+    setLocalSyncVersion((v) => v + 1)
+    setServerInSync(true)
+
+    void queryClient.invalidateQueries({
+      queryKey: convexQuery(api.golf.scoresForTeam, {
+        teamName: profile.teamName,
+      }).queryKey,
+    })
+
+    setSkipNextScorePromptForHole((s) => (s === hole ? null : s))
+    setScoreOpenedViaNext(false)
+    setScoreDialogOpen(false)
+    setScoreTargetHole(null)
+  }
+
   if (!hydrated || !profile) {
     return (
       <div className="mx-auto max-w-md px-4 py-16 text-center text-sm text-muted-foreground">
@@ -883,13 +950,20 @@ function PlayGolfPage() {
         existingTeePlayerId={
           scoreTargetHole ? teePlayerForHole(scoreTargetHole) : undefined
         }
+        holeHasStoredData={
+          scoreTargetHole !== null &&
+          (scoreForHole(scoreTargetHole) !== undefined ||
+            teePlayerForHole(scoreTargetHole) !== undefined)
+        }
         teammates={teammates}
         teeMinimum={teeMinimum}
         openedFromNextNavigation={scoreOpenedViaNext}
+        clearingHole={clearingHoleScore}
         onConfirm={(strokeTotal, pickPlayerId) =>
           void confirmScore(strokeTotal, pickPlayerId)
         }
         onCancel={cancelScoreDialog}
+        onClearHole={() => void clearHoleScore()}
       />
     </div>
   )
@@ -900,21 +974,27 @@ function ScoreCaptureDialog({
   hole,
   existingStrokes,
   existingTeePlayerId,
+  holeHasStoredData,
   teammates,
   teeMinimum,
   openedFromNextNavigation,
+  clearingHole,
   onConfirm,
   onCancel,
+  onClearHole,
 }: {
   open: boolean
   hole: number | null
   existingStrokes?: number
   existingTeePlayerId?: string
+  holeHasStoredData: boolean
   teammates: Array<{ id: string; name: string }>
   teeMinimum: number
   openedFromNextNavigation: boolean
+  clearingHole: boolean
   onConfirm: (strokes: number, teePlayerId: string) => void
   onCancel: () => void
+  onClearHole: () => void
 }) {
   const meta = hole ? HOLE_META[hole - 1] : null
   const par = meta?.par ?? 4
@@ -975,23 +1055,38 @@ function ScoreCaptureDialog({
         showCloseButton={false}
         className="rounded-2xl sm:max-w-sm"
       >
-        <DialogHeader>
-          <DialogTitle>
-            {hole === null ? 'Score' : `Hole ${hole} score`}
-          </DialogTitle>
-          <DialogDescription>
-            {openedFromNextNavigation ? (
-              <>
-                Add your team&apos;s score and tee-ball player, or tap outside
-                the dialog and press Next again to skip this hole for now.
-              </>
-            ) : (
-              <>
-                Choose whose drive was used and enter the team&apos;s strokes.
-              </>
-            )}
-          </DialogDescription>
-        </DialogHeader>
+        <div className="flex items-start justify-between gap-3">
+          <DialogHeader className="flex-1 space-y-1.5 text-left">
+            <DialogTitle>
+              {hole === null ? 'Score' : `Hole ${hole} score`}
+            </DialogTitle>
+            <DialogDescription>
+              {openedFromNextNavigation ? (
+                <>
+                  Add your team&apos;s score and tee-ball player, or tap outside
+                  the dialog and press Next again to skip this hole for now.
+                </>
+              ) : (
+                <>
+                  Choose whose drive was used and enter the team&apos;s strokes.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {hole !== null && holeHasStoredData && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-0.5 shrink-0 rounded-lg text-destructive hover:bg-destructive/10 hover:text-destructive"
+              disabled={clearingHole}
+              aria-busy={clearingHole}
+              onClick={onClearHole}
+            >
+              {clearingHole ? 'Clearing…' : 'Clear hole'}
+            </Button>
+          )}
+        </div>
 
         {hole !== null && meta && teammates.length > 0 && (
           <div className="space-y-4">

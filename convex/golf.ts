@@ -233,3 +233,28 @@ export const syncFullScorecard = mutation({
     await upsertTeamHoleScores(ctx, args)
   },
 })
+
+/** Deletes server rows for one hole (sync upserts only — clears need an explicit delete). */
+export const clearHoleScore = mutation({
+  args: {
+    teamName: v.string(),
+    teamId: v.string(),
+    hole: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const roster = rosterPlayerIdsForTeamId(args.teamId)
+    if (roster.length === 0) {
+      throw new ConvexError('Unknown team')
+    }
+    if (args.hole < 1 || args.hole > 18) {
+      throw new ConvexError('Invalid hole')
+    }
+    const rows = await ctx.db.query('teamHoleScores').collect()
+    const matches = rows.filter(
+      (r) => r.teamId === args.teamId && r.hole === args.hole,
+    )
+    for (const row of matches) {
+      await ctx.db.delete('teamHoleScores', row._id)
+    }
+  },
+})

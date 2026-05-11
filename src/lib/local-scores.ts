@@ -57,6 +57,21 @@ export function addPendingHoleSync(teamName: string, hole: number) {
   writePendingAll(all)
 }
 
+/** Remove one hole from the pending set (e.g. after clearing scores for that hole). */
+export function removePendingHoleSyncForHole(teamName: string, hole: number) {
+  if (!teamName || !Number.isInteger(hole) || hole < 1 || hole > 18) return
+  const all = readPendingAll()
+  const list = all[teamName]
+  if (!Array.isArray(list) || !list.includes(hole)) return
+  const next = list.filter((h) => h !== hole)
+  if (next.length === 0) {
+    delete all[teamName]
+  } else {
+    all[teamName] = next
+  }
+  writePendingAll(all)
+}
+
 export function clearPendingHoleSyncForTeam(teamName: string) {
   if (!teamName) return
   const all = readPendingAll()
