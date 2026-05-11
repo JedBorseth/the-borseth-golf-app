@@ -54,6 +54,9 @@ export const adminClearLobbyChat = mutation({
         .take(400)
       if (batch.length === 0) break
       for (const row of batch) {
+        if (row.imageStorageId) {
+          await ctx.storage.delete(row.imageStorageId)
+        }
         await ctx.db.delete('lobbyChatMessages', row._id)
       }
     }

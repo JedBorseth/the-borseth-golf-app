@@ -24,7 +24,10 @@ export default defineSchema({
     playerName: v.string(),
     /** Server-resolved team display name at send time (custom name from scoreboard). */
     teamDisplayName: v.optional(v.string()),
+    /** Text body, or caption when `imageStorageId` is set. */
     body: v.string(),
+    /** Convex storage id for a lobby chat attachment (JPEG/WebP compressed on the client). */
+    imageStorageId: v.optional(v.id('_storage')),
     sentAt: v.number(),
   }).index('by_room_and_sentAt', ['room', 'sentAt']),
 })
