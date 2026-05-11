@@ -220,7 +220,9 @@ function PlayGolfPage() {
       ? { strokes: local.strokes, teePlayerIdByHole: local.teePlayerIdByHole }
       : { strokes: {}, teePlayerIdByHole: {} }
 
-    const merged = mergeScorecardsByCompleteness(localMaps, serverMaps)
+    const merged = mergeScorecardsByCompleteness(localMaps, serverMaps, {
+      preferServerOnTie: false,
+    })
     if (scorecardsHoleDataEqual(merged, localMaps)) return
 
     saveLocalScorecard({
@@ -267,7 +269,9 @@ function PlayGolfPage() {
         strokes: card.strokes,
         teePlayerIdByHole: card.teePlayerIdByHole,
       }
-      const merged = mergeScorecardsByCompleteness(localMaps, serverMaps)
+      const merged = mergeScorecardsByCompleteness(localMaps, serverMaps, {
+        preferServerOnTie: false,
+      })
       if (!scorecardsHoleDataEqual(merged, localMaps)) {
         saveLocalScorecard({
           teamName: card.teamName,
@@ -448,6 +452,7 @@ function PlayGolfPage() {
         teePlayerIdByHole: next.teePlayerIdByHole,
       },
       serverMaps,
+      { preferServerOnTie: false },
     )
     const toSave: LocalScorecard = {
       teamName: profile.teamName,
@@ -512,6 +517,7 @@ function PlayGolfPage() {
         teePlayerIdByHole: card.teePlayerIdByHole,
       },
       serverMaps,
+      { preferServerOnTie: false },
     )
     const holes = holesPayloadFromScorecard(
       mergedMaps.strokes,
