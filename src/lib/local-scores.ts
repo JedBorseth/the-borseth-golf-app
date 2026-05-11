@@ -344,7 +344,9 @@ export function mergeScorecardsByCompleteness(
 
 /**
  * Multi-device Convex sync: holes with pending local edits keep this device's stroke/tee
- * rows; otherwise prefer the server snapshot (fills teammate holes ahead of us; propagates edits).
+ * rows; otherwise prefer the server snapshot (fills teammate holes ahead of us; propagates
+ * edits and clears). Do not resurrect holes from local when the server omits them unless that
+ * hole is still pending — otherwise cleared holes would reappear after teammate refresh/sync.
  */
 export function mergeScorecardsRealtime(
   local: ScorecardHoleMaps,
@@ -365,9 +367,6 @@ export function mergeScorecardsRealtime(
     } else if (sc) {
       strokes[pk] = server.strokes[pk]
       teePlayerIdByHole[pk] = server.teePlayerIdByHole[pk]
-    } else if (lc) {
-      strokes[pk] = local.strokes[pk]
-      teePlayerIdByHole[pk] = local.teePlayerIdByHole[pk]
     }
   }
 
