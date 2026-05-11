@@ -2,7 +2,7 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { ConvexError } from 'convex/values'
 import * as React from 'react'
 import { useMutation } from 'convex/react'
-import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { convexQuery } from '@convex-dev/react-query'
 import {
   ArrowLeftIcon,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 
 import { api } from '../../../convex/_generated/api'
+import type { QueryClient } from '@tanstack/react-query'
 import type { DeviceProfile } from '~/lib/device-profile'
 import type { LocalScorecard } from '~/lib/local-scores'
 import { Button, buttonVariants } from '~/components/ui/button'
@@ -55,11 +56,14 @@ import {
   relativeToParShortLabel,
 } from '~/lib/hole-score-indicator'
 import {
+  addPendingHoleSync,
   clearLocalScorecard,
   holesPayloadFromScorecard,
   loadLocalScorecard,
-  mergeScorecardsByCompleteness,
+  loadPendingHoleSyncSet,
+  mergeScorecardsRealtime,
   migrateLocalScorecardTeamNameKey,
+  reconcilePendingHoleSyncWithServer,
   saveLocalScorecard,
   scorecardsHoleDataEqual,
 } from '~/lib/local-scores'
@@ -212,17 +216,17 @@ function PlayGolfPage() {
     if (local && local.teamId !== profile.teamId) return
 
     const server = scoresQuery.data
+
     const serverMaps = {
-      strokes: server.strokes ?? {},
-      teePlayerIdByHole: server.teePlayerIdByHole ?? {},
+      strokes: server.strokes,
+      teePlayerIdByHole: server.teePlayerIdByHole,
     }
     const localMaps = local
       ? { strokes: local.strokes, teePlayerIdByHole: local.teePlayerIdByHole }
       : { strokes: {}, teePlayerIdByHole: {} }
 
-    const merged = mergeScorecardsByCompleteness(localMaps, serverMaps, {
-      preferServerOnTie: false,
-    })
+    const pending = loadPendingHoleSyncSet(teamName)
+    const merged = mergeScorecardsRealtime(localMaps, serverMaps, pending)
     if (scorecardsHoleDataEqual(merged, localMaps)) return
 
     saveLocalScorecard({
@@ -232,6 +236,30 @@ function PlayGolfPage() {
       teePlayerIdByHole: merged.teePlayerIdByHole,
     })
     setLocalSyncVersion((v) => v + 1)
+  }, [
+    hydrated,
+    teamName,
+    profile?.teamId,
+    scoresQuery.isSuccess,
+    scoresQuery.data,
+  ])
+
+  React.useEffect(() => {
+    if (!hydrated || !teamName || !profile?.teamId || !scoresQuery.isSuccess)
+      return
+
+    const local = loadLocalScorecard(teamName)
+    if (local && local.teamId !== profile.teamId) return
+
+    const server = scoresQuery.data
+
+    const serverMaps = {
+      strokes: server.strokes,
+      teePlayerIdByHole: server.teePlayerIdByHole,
+    }
+    if (reconcilePendingHoleSyncWithServer(teamName, local, serverMaps)) {
+      setLocalSyncVersion((v) => v + 1)
+    }
   }, [
     hydrated,
     teamName,
@@ -269,9 +297,8 @@ function PlayGolfPage() {
         strokes: card.strokes,
         teePlayerIdByHole: card.teePlayerIdByHole,
       }
-      const merged = mergeScorecardsByCompleteness(localMaps, serverMaps, {
-        preferServerOnTie: false,
-      })
+      const pending = loadPendingHoleSyncSet(teamName)
+      const merged = mergeScorecardsRealtime(localMaps, serverMaps, pending)
       if (!scorecardsHoleDataEqual(merged, localMaps)) {
         saveLocalScorecard({
           teamName: card.teamName,
@@ -427,6 +454,8 @@ function PlayGolfPage() {
       return
     const hole = scoreTargetHole
 
+    addPendingHoleSync(profile.teamName, hole)
+
     const prev =
       loadLocalScorecard(profile.teamName) ?? {
         teamName: profile.teamName,
@@ -446,13 +475,13 @@ function PlayGolfPage() {
     }
 
     const serverMaps = teamScoresFromQueryCache(queryClient, profile.teamName)
-    const mergedMaps = mergeScorecardsByCompleteness(
+    const mergedMaps = mergeScorecardsRealtime(
       {
         strokes: next.strokes,
         teePlayerIdByHole: next.teePlayerIdByHole,
       },
       serverMaps,
-      { preferServerOnTie: false },
+      loadPendingHoleSyncSet(profile.teamName),
     )
     const toSave: LocalScorecard = {
       teamName: profile.teamName,
@@ -511,13 +540,13 @@ function PlayGolfPage() {
       return
     }
     const serverMaps = teamScoresFromQueryCache(queryClient, profile.teamName)
-    const mergedMaps = mergeScorecardsByCompleteness(
+    const mergedMaps = mergeScorecardsRealtime(
       {
         strokes: card.strokes,
         teePlayerIdByHole: card.teePlayerIdByHole,
       },
       serverMaps,
-      { preferServerOnTie: false },
+      loadPendingHoleSyncSet(profile.teamName),
     )
     const holes = holesPayloadFromScorecard(
       mergedMaps.strokes,

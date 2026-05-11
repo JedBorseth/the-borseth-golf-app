@@ -9,6 +9,126 @@ export type LocalScorecard = {
 
 const STORAGE_KEY = 'borseth-cup-local-rounds-v2'
 
+/** Hole numbers awaiting server echo — keep local edits from being stomped during merge/sync. */
+const PENDING_SYNC_KEY = 'borseth-cup-pending-hole-sync-v1'
+
+type PendingHoleMapJson = Record<string, Array<number>>
+
+function readPendingAll(): PendingHoleMapJson {
+  if (typeof localStorage === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(PENDING_SYNC_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return {}
+    const out: PendingHoleMapJson = {}
+    for (const [k, v] of Object.entries(parsed)) {
+      if (!Array.isArray(v)) continue
+      const nums = v
+        .map((x) => (typeof x === 'number' ? x : Number(x)))
+        .filter((n) => Number.isInteger(n) && n >= 1 && n <= 18)
+      if (nums.length) out[k] = [...new Set(nums)]
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function writePendingAll(map: PendingHoleMapJson) {
+  if (typeof localStorage === 'undefined') return
+  localStorage.setItem(PENDING_SYNC_KEY, JSON.stringify(map))
+}
+
+/** Holes edited on this device until server echo matches saved local scores. */
+export function loadPendingHoleSyncSet(teamName: string): Set<number> {
+  if (!teamName) return new Set()
+  const list = readPendingAll()[teamName]
+  return new Set(Array.isArray(list) ? list : [])
+}
+
+/** Mark a hole after save so merges prefer local until the server echoes the same strokes/tee. */
+export function addPendingHoleSync(teamName: string, hole: number) {
+  if (!teamName || !Number.isInteger(hole) || hole < 1 || hole > 18) return
+  const all = readPendingAll()
+  const cur = new Set(all[teamName] ?? [])
+  cur.add(hole)
+  all[teamName] = [...cur].sort((a, b) => a - b)
+  writePendingAll(all)
+}
+
+export function clearPendingHoleSyncForTeam(teamName: string) {
+  if (!teamName) return
+  const all = readPendingAll()
+  delete all[teamName]
+  writePendingAll(all)
+}
+
+export function migratePendingHoleSyncTeamKey(fromKey: string, toKey: string) {
+  if (!fromKey || !toKey || fromKey === toKey) return
+  const all = readPendingAll()
+  const mv = all[fromKey] ?? []
+  if (mv.length === 0) {
+    delete all[fromKey]
+    writePendingAll(all)
+    return
+  }
+  const merged = new Set([...(all[toKey] ?? []), ...mv])
+  all[toKey] = [...merged].sort((a, b) => a - b)
+  delete all[fromKey]
+  writePendingAll(all)
+}
+
+/**
+ * When server query reports the same strokes + tee ball as localStorage for pending holes,
+ * drop those holes from the pending set (sync confirmed).
+ */
+export function reconcilePendingHoleSyncWithServer(
+  teamName: string,
+  local: LocalScorecard | null,
+  server: ScorecardHoleMaps,
+): boolean {
+  if (!teamName) return false
+  const pending = loadPendingHoleSyncSet(teamName)
+  if (pending.size === 0 || !local) return false
+
+  let changed = false
+  const nextPending = new Set(pending)
+
+  const localMaps: ScorecardHoleMaps = {
+    strokes: local.strokes,
+    teePlayerIdByHole: local.teePlayerIdByHole,
+  }
+
+  for (const hole of pending) {
+    if (
+      !isCompleteHole(server.strokes, server.teePlayerIdByHole, hole) ||
+      !isCompleteHole(localMaps.strokes, localMaps.teePlayerIdByHole, hole)
+    ) {
+      continue
+    }
+    const k = String(hole)
+    if (
+      server.strokes[k] === localMaps.strokes[k] &&
+      server.teePlayerIdByHole[k] === localMaps.teePlayerIdByHole[k]
+    ) {
+      nextPending.delete(hole)
+      changed = true
+    }
+  }
+
+  if (!changed) return false
+
+  const all = readPendingAll()
+  if (nextPending.size === 0) {
+    delete all[teamName]
+  } else {
+    all[teamName] = [...nextPending].sort((a, b) => a - b)
+  }
+  writePendingAll(all)
+  return true
+}
+
 function readAll(): Record<string, LocalScorecard> {
   if (typeof localStorage === 'undefined') return {}
   try {
@@ -99,6 +219,7 @@ export function migrateLocalScorecardTeamNameKey(
   })
 
   if (fromKey !== toKey && fromKey) {
+    migratePendingHoleSyncTeamKey(fromKey, toKey)
     clearLocalScorecard(fromKey)
   }
 }
@@ -107,11 +228,13 @@ export function clearLocalScorecard(teamName: string) {
   const all = readAll()
   delete all[teamName]
   writeAll(all)
+  clearPendingHoleSyncForTeam(teamName)
 }
 
 export function clearAllLocalScorecards() {
   if (typeof localStorage === 'undefined') return
   localStorage.removeItem(STORAGE_KEY)
+  localStorage.removeItem(PENDING_SYNC_KEY)
 }
 
 /** Stroke + tee maps only (no team metadata). */
@@ -198,6 +321,38 @@ export function mergeScorecardsByCompleteness(
     ) {
       strokes[pk] = secondary.strokes[pk]
       teePlayerIdByHole[pk] = secondary.teePlayerIdByHole[pk]
+    }
+  }
+
+  return { strokes, teePlayerIdByHole }
+}
+
+/**
+ * Multi-device Convex sync: holes with pending local edits keep this device's stroke/tee
+ * rows; otherwise prefer the server snapshot (fills teammate holes ahead of us; propagates edits).
+ */
+export function mergeScorecardsRealtime(
+  local: ScorecardHoleMaps,
+  server: ScorecardHoleMaps,
+  pendingLocalEdits: ReadonlySet<number>,
+): ScorecardHoleMaps {
+  const strokes: Record<string, number> = {}
+  const teePlayerIdByHole: Record<string, string> = {}
+
+  for (let hole = 1; hole <= 18; hole++) {
+    const pk = holeKey(hole)
+    const lc = isCompleteHole(local.strokes, local.teePlayerIdByHole, hole)
+    const sc = isCompleteHole(server.strokes, server.teePlayerIdByHole, hole)
+
+    if (pendingLocalEdits.has(hole) && lc) {
+      strokes[pk] = local.strokes[pk]
+      teePlayerIdByHole[pk] = local.teePlayerIdByHole[pk]
+    } else if (sc) {
+      strokes[pk] = server.strokes[pk]
+      teePlayerIdByHole[pk] = server.teePlayerIdByHole[pk]
+    } else if (lc) {
+      strokes[pk] = local.strokes[pk]
+      teePlayerIdByHole[pk] = local.teePlayerIdByHole[pk]
     }
   }
 
